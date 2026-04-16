@@ -1,6 +1,5 @@
-# This is a simple slugify function that converts a string into a URL-friendly slug. It normalizes the string, removes non-alphanumeric characters, and replaces spaces with hyphens.
-# For example, "Hello World!" would become "hello-world". This is useful for creating clean URLs based on titles or names.
-
+# This is a modified version of the Django slugify function, which is licensed under the BSD License.
+# It has been adapted to treat underscores as separators rather than characters to delete, and to collapse any run of non-alphanumeric characters into a single hyphen.
 import re
 import unicodedata
 
@@ -8,6 +7,11 @@ import unicodedata
 def slugify(value: str) -> str:
     value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
     value = value.lower().strip()
-    value = re.sub(r"[^a-z0-9\s-]", "", value)
-    value = re.sub(r"[\s-]+", "-", value)
+
+    # Treat underscores like separators, not characters to delete
+    value = value.replace("_", " ")
+
+    # Collapse any run of non-alphanumeric characters into a single hyphen
+    value = re.sub(r"[^a-z0-9]+", "-", value)
+
     return value.strip("-")
