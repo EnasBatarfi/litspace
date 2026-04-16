@@ -2,10 +2,11 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import health, parsing, projects, upload
+from app.api.routes import chunking, health, parsing, projects, upload
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(projects.router)
 api_router.include_router(upload.router)
 api_router.include_router(parsing.router)
+api_router.include_router(chunking.router)

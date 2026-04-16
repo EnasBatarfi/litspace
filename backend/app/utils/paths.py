@@ -45,6 +45,10 @@ def get_processed_document_path(project_slug: str, paper_id: int) -> Path:
     return get_project_processed_dir(project_slug) / f"{paper_id}.json"
 
 
+def get_chunk_document_path(project_slug: str, paper_id: int) -> Path:
+    return get_project_processed_dir(project_slug) / f"{paper_id}.chunks.json"
+
+
 def resolve_repo_relative_path(path_value: str | Path) -> Path:
     path = Path(path_value)
     if path.is_absolute():
