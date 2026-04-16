@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.litenv/
+.pytest_cache/
+
+# Env files
+.env
+.env.local
+
+# Node
+node_modules/
+.next/
+out/
+
+# Data
+data/raw/*
+data/processed/*
+data/indexes/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/indexes/.gitkeep
+
+# SQLite
+*.db
+*.sqlite
