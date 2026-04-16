@@ -17,6 +17,7 @@ class PaperRead(BaseModel):
     year: int | None
     status: str
     file_path: str
+    processed_path: str | None
     created_at: datetime
 
 

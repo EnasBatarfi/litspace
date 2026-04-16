@@ -7,6 +7,8 @@ from app.core.config import settings
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+REPO_ROOT = BACKEND_DIR.parent
+
 DATA_DIR = (BACKEND_DIR / settings.data_dir).resolve()
 RAW_DIR = (BACKEND_DIR / settings.raw_pdf_dir).resolve()
 PROCESSED_DIR = (BACKEND_DIR / settings.processed_dir).resolve()
@@ -37,3 +39,19 @@ def ensure_project_directories(project_slug: str) -> None:
     get_project_raw_dir(project_slug).mkdir(parents=True, exist_ok=True)
     get_project_processed_dir(project_slug).mkdir(parents=True, exist_ok=True)
     get_project_index_dir(project_slug).mkdir(parents=True, exist_ok=True)
+
+
+def get_processed_document_path(project_slug: str, paper_id: int) -> Path:
+    return get_project_processed_dir(project_slug) / f"{paper_id}.json"
+
+
+def resolve_repo_relative_path(path_value: str | Path) -> Path:
+    path = Path(path_value)
+    if path.is_absolute():
+        return path.resolve()
+    return (REPO_ROOT / path).resolve()
+
+
+def to_repo_relative_path(path_value: str | Path) -> str:
+    path = Path(path_value).resolve()
+    return str(path.relative_to(REPO_ROOT.resolve()))

@@ -7,7 +7,11 @@ from pathlib import Path
 
 from fastapi import UploadFile
 
-from app.utils.paths import ensure_project_directories, get_project_raw_dir
+from app.utils.paths import (
+    ensure_project_directories,
+    get_project_raw_dir,
+    to_repo_relative_path,
+)
 from app.utils.slug import slugify
 
 
@@ -49,11 +53,9 @@ def save_uploaded_pdf(file: UploadFile, project_slug: str) -> dict[str, str]:
         while chunk := file.file.read(1024 * 1024):
             out_file.write(chunk)
 
-    relative_path = Path("data") / "raw" / project_slug / stored_filename
-
     return {
         "original_filename": original_filename,
         "stored_filename": stored_filename,
         "absolute_path": str(destination),
-        "relative_path": str(relative_path),
+        "relative_path": to_repo_relative_path(destination),
     }

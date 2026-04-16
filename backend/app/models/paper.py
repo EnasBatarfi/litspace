@@ -1,4 +1,5 @@
 # This is to define the Paper model, which represents a research paper in the database. It includes fields for the original filename, stored filename, title, authors, year, status, file path, and timestamps for when the paper was created. The model also establishes a relationship with the Project model, indicating that each paper belongs to a specific project.
+
 from __future__ import annotations
 
 import datetime as dt
@@ -26,6 +27,7 @@ class Paper(Base):
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="uploaded")
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    processed_path: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
