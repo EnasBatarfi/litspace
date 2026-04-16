@@ -62,15 +62,31 @@ If a filename already exists in the same project, LitSpace appends `-2`, `-3`, a
 Example:
 
 ```text
-data/raw/llm-isolation-privacy/exam2-concept-by-concept-practice-copy-2.pdf
+data/raw/llm-isolation-privacy/llm-paper-1.pdf
 ```
 
 ### Phase 3. Parsing Pipeline
 
-1. [ ] Parse PDFs with PyMuPDF.
-2. [ ] Extract page-level structured text.
-3. [ ] Save parsed JSON under `data/processed/`.
-4. [ ] Update paper parsing status.
+1. [x] Parse PDFs with PyMuPDF.
+2. [x] Extract page-level structured text.
+3. [x] Save parsed JSON under `data/processed/`.
+4. [x] Update paper parsing status from `uploaded` to `parsed`.
+5. [x] Add `POST /papers/{paper_id}/parse`.
+6. [x] Store predictable processed document paths.
+
+Processed documents are stored as:
+
+```text
+data/processed/<project-slug>/<paper-id>.json
+```
+
+Example:
+
+```text
+data/processed/llm-isolation-privacy/1.json
+```
+
+The processed JSON includes paper metadata, source PDF path, total page count, and page-level extracted text.
 
 ### Phase 4. Chunking Pipeline
 
