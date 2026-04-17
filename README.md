@@ -180,15 +180,53 @@ Known limitations:
 
 ### Phase 5. Indexing Pipeline
 
-1. [ ] Add local embedding model.
-2. [ ] Add Chroma vector index.
-3. [ ] Add BM25 lexical index.
-4. [ ] Build project-scoped indexing.
+1. [x] Add local embedding model with Sentence Transformers.
+2. [x] Add Chroma semantic vector index.
+3. [x] Add BM25 lexical index payload.
+4. [x] Build project-scoped indexing across all chunked papers.
+5. [x] Add `POST /projects/{project_id}/index`.
+6. [x] Update indexed paper statuses from `chunked` to `indexed`.
 
 Primary files/directories touched:
 
-- Not implemented yet.
-- Expected touch points: `backend/app/api/routes/indexing.py`, `backend/app/services/indexing/`, and `data/indexes/<project-slug>/`.
+- `backend/requirements.txt`
+- `backend/app/core/config.py`
+- `backend/app/api/router.py`
+- `backend/app/api/routes/indexing.py`
+- `backend/app/schemas/indexing.py`
+- `backend/app/services/embedding/encoder.py`
+- `backend/app/services/indexing/chroma_indexer.py`
+- `backend/app/services/indexing/bm25_indexer.py`
+- `backend/app/utils/paths.py`
+- `data/indexes/chroma/`
+- `data/indexes/<project-slug>/bm25.json`
+- `data/litspace.db`
+
+Project indexes are stored as:
+
+```text
+data/indexes/chroma/
+data/indexes/<project-slug>/bm25.json
+```
+
+Example:
+
+```text
+data/indexes/chroma/chroma.sqlite3
+data/indexes/llm-isolation-privacy/bm25.json
+```
+
+The indexing endpoint reads all chunk files for a project, embeds each chunk with the configured embedding model, recreates the project's Chroma collection, writes a BM25 payload, and marks successfully indexed papers as `indexed`.
+
+Indexing response fields include project metadata, indexed paper IDs, total chunks indexed, embedding model, Chroma collection name, and BM25 index path.
+
+Known limitations:
+
+- Indexing is ingestion-only; retrieval and query answering are handled in Phase 6.
+- Re-indexing currently recreates the full project Chroma collection instead of incrementally updating changed papers.
+- The BM25 file stores tokenized entries as JSON for simple local retrieval, not a compact production search index.
+- First-time embedding may require model download and can be slow.
+- Apple MPS acceleration is best-effort; the embedding service can fall back to CPU if MPS causes runtime issues.
 
 ### Phase 6. Query And Grounded Generation
 

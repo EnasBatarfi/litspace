@@ -49,6 +49,18 @@ def get_chunk_document_path(project_slug: str, paper_id: int) -> Path:
     return get_project_processed_dir(project_slug) / f"{paper_id}.chunks.json"
 
 
+def get_chroma_persist_dir() -> Path:
+    path = INDEX_DIR / "chroma"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_project_bm25_path(project_slug: str) -> Path:
+    path = get_project_index_dir(project_slug) / "bm25.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def resolve_repo_relative_path(path_value: str | Path) -> Path:
     path = Path(path_value)
     if path.is_absolute():
