@@ -9,7 +9,7 @@ LitSpace is a grounded multi-paper research workspace for academic PDFs.
 - PDF parsing: PyMuPDF
 - Vector store: Chroma
 - Embeddings: Sentence Transformers
-- Retrieval: Hybrid retrieval with reranking
+- Retrieval: Hybrid semantic and lexical retrieval with reciprocal rank fusion
 - Data storage: Local files + SQLite
 
 ## Goals
@@ -220,29 +220,86 @@ The indexing endpoint reads all chunk files for a project, embeds each chunk wit
 
 Indexing response fields include project metadata, indexed paper IDs, total chunks indexed, embedding model, Chroma collection name, and BM25 index path.
 
+Current validation for `llm-isolation-privacy`: 3 papers indexed, 166 chunks indexed, Chroma persisted on disk, BM25 JSON built, and all 3 papers marked `indexed`.
+
 Known limitations:
 
-- Indexing is ingestion-only; retrieval and query answering are handled in Phase 6.
+- Indexing is ingestion-only; evidence retrieval is handled in Phase 6 and answer generation remains Phase 7.
 - Re-indexing currently recreates the full project Chroma collection instead of incrementally updating changed papers.
 - The BM25 file stores tokenized entries as JSON for simple local retrieval, not a compact production search index.
 - First-time embedding may require model download and can be slow.
 - Apple MPS acceleration is best-effort; the embedding service can fall back to CPU if MPS causes runtime issues.
 
-### Phase 6. Query And Grounded Generation
+### Phase 6. Retrieval And Evidence Pipeline
 
-1. [ ] Add semantic-only baseline retrieval.
-2. [ ] Add hybrid retrieval.
-3. [ ] Add reranking.
-4. [ ] Add grounded prompt templates.
-5. [ ] Return citations.
-6. [ ] Add abstention behavior.
+1. [x] Add semantic retrieval from Chroma.
+2. [x] Add lexical retrieval from BM25.
+3. [x] Merge semantic and lexical hits with reciprocal rank fusion.
+4. [x] Return top evidence chunks with chunk text and metadata.
+5. [x] Add `POST /projects/{project_id}/retrieve`.
+6. [x] Keep retrieval scoped to the selected project.
+7. [ ] Add reranking after baseline retrieval quality is reviewed.
+
+Primary files/directories touched:
+
+- `backend/app/api/router.py`
+- `backend/app/api/routes/query.py`
+- `backend/app/schemas/retrieval.py`
+- `backend/app/services/retrieval/chroma_retriever.py`
+- `backend/app/services/retrieval/bm25_retriever.py`
+- `backend/app/services/retrieval/hybrid.py`
+- `backend/app/services/embedding/encoder.py`
+- `backend/app/services/indexing/chroma_indexer.py`
+- `backend/app/services/indexing/bm25_indexer.py`
+- `data/indexes/chroma/`
+- `data/indexes/<project-slug>/bm25.json`
+
+The retrieval endpoint accepts a project-scoped query and returns evidence chunks only:
+
+```text
+POST /projects/{project_id}/retrieve
+```
+
+Example request:
+
+```json
+{
+  "query": "How does Progent enforce privilege control over tool calls?",
+  "top_k": 5
+}
+```
+
+Each hit includes chunk ID, paper ID, project metadata, chunk index, page range, section heading, paper title, original filename, chunk text, semantic rank, lexical rank, and hybrid score.
+
+Current validation queries:
+
+- Progent privilege control query returns relevant Progent chunks from paper 1.
+- Sesame policy container query returns relevant Sesame chunks from paper 3.
+- Broad LLM-agent attack-vector query returns relevant security chunks, mostly from Progent.
+- Sesame runtime overhead query returns Sesame performance chunks, with one related CSAgent overhead hit.
+
+Known limitations:
+
+- Retrieval returns evidence chunks only; no answer generation, citation synthesis, or abstention behavior yet.
+- Hybrid ranking currently uses reciprocal rank fusion without learned weighting or reranking.
+- BM25 is rebuilt from the JSON payload at retrieval time, which is simple but not optimized for large corpora.
+- Reference sections and noisy chunks are not filtered out yet.
+- Retrieval quality still needs tuning after more query coverage, especially for broad multi-paper questions.
+
+### Phase 7. Grounded Answer Generation
+
+1. [ ] Add answer modes such as QA, summary, compare, and evidence.
+2. [ ] Add grounded prompt templates over retrieved chunks.
+3. [ ] Add citation formatting from retrieved chunk metadata.
+4. [ ] Add refusal or fallback behavior when evidence support is weak.
+5. [ ] Keep generation separate from retrieval so evidence quality can be debugged first.
 
 Primary files/directories touched:
 
 - Not implemented yet.
-- Expected touch points: `backend/app/api/routes/query.py`, retrieval services, prompt-building services, and frontend query UI files.
+- Expected touch points: `backend/app/api/routes/query.py`, prompt-building services, answer-generation services, retrieval schemas, and frontend query UI files.
 
-### Phase 7. Evaluation Harness
+### Phase 8. Evaluation Harness
 
 1. [ ] Build gold question set.
 2. [ ] Add retrieval metrics.
@@ -257,7 +314,7 @@ Primary files/directories touched:
 - Not implemented yet.
 - Expected touch points: `data/eval/`, evaluation scripts/services, and retrieval result artifacts.
 
-### Phase 8. Thin UI Polish
+### Phase 9. Thin UI Polish
 
 1. [x] Initialize Next.js frontend.
 2. [x] Add frontend API client.
