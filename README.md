@@ -10,6 +10,7 @@ LitSpace is a grounded multi-paper research workspace for academic PDFs.
 - Vector store: Chroma
 - Embeddings: Sentence Transformers
 - Retrieval: Hybrid semantic and lexical retrieval with reciprocal rank fusion
+- Generation: Local Ollama chat model
 - Data storage: Local files + SQLite
 
 ## Goals
@@ -224,7 +225,7 @@ Current validation for `llm-isolation-privacy`: 3 papers indexed, 166 chunks ind
 
 Known limitations:
 
-- Indexing is ingestion-only; evidence retrieval is handled in Phase 6 and answer generation remains Phase 7.
+- Indexing is ingestion-only; evidence retrieval is handled in Phase 6 and answer generation is handled in Phase 7.
 - Re-indexing currently recreates the full project Chroma collection instead of incrementally updating changed papers.
 - The BM25 file stores tokenized entries as JSON for simple local retrieval, not a compact production search index.
 - First-time embedding may require model download and can be slow.
@@ -280,7 +281,7 @@ Current validation queries:
 
 Known limitations:
 
-- Retrieval returns evidence chunks only; no answer generation, citation synthesis, or abstention behavior yet.
+- Retrieval returns evidence chunks only; grounded answer generation is handled separately in Phase 7.
 - Hybrid ranking currently uses reciprocal rank fusion without learned weighting or reranking.
 - BM25 is rebuilt from the JSON payload at retrieval time, which is simple but not optimized for large corpora.
 - Reference sections and noisy chunks are not filtered out yet.
@@ -288,16 +289,65 @@ Known limitations:
 
 ### Phase 7. Grounded Answer Generation
 
-1. [ ] Add answer modes such as QA, summary, compare, and evidence.
-2. [ ] Add grounded prompt templates over retrieved chunks.
-3. [ ] Add citation formatting from retrieved chunk metadata.
-4. [ ] Add refusal or fallback behavior when evidence support is weak.
-5. [ ] Keep generation separate from retrieval so evidence quality can be debugged first.
+1. [x] Add local LLM generation config for Ollama.
+2. [x] Add grounded ask schemas.
+3. [x] Factor shared hybrid retrieval pipeline for `/retrieve` and `/ask`.
+4. [x] Add grounded prompt templates over retrieved chunks.
+5. [x] Add local Ollama chat client.
+6. [x] Add answer orchestration service.
+7. [x] Add `POST /projects/{project_id}/ask`.
+8. [x] Return answers with inline source tags like `[S1]`.
+9. [x] Return supporting source snippets used by the answer.
+10. [x] Return cautious insufficient-evidence answers for unsupported questions.
+11. [x] Ensure insufficient-evidence responses return `used_sources: []`.
 
 Primary files/directories touched:
 
-- Not implemented yet.
-- Expected touch points: `backend/app/api/routes/query.py`, prompt-building services, answer-generation services, retrieval schemas, and frontend query UI files.
+- `backend/requirements.txt`
+- `backend/.env.example`
+- `backend/app/core/config.py`
+- `backend/app/api/router.py`
+- `backend/app/api/routes/query.py`
+- `backend/app/api/routes/answering.py`
+- `backend/app/schemas/answering.py`
+- `backend/app/services/retrieval/pipeline.py`
+- `backend/app/services/generation/prompting.py`
+- `backend/app/services/llm/client.py`
+- `backend/app/services/answering/answerer.py`
+
+The ask endpoint retrieves evidence from the selected project, sends only those chunks to the configured local model, and returns a grounded answer plus the source excerpts:
+
+```text
+POST /projects/{project_id}/ask
+```
+
+Example request:
+
+```json
+{
+  "query": "How does Progent enforce privilege control over tool calls?",
+  "top_k": 5,
+  "max_output_tokens": 400,
+  "temperature": 0.1
+}
+```
+
+Each response includes the project ID, project slug, original query, answer text, `insufficient_evidence`, retrieval hit count, and `used_sources`.
+
+Current validation:
+
+- Supported Progent questions return grounded answers with inline citations.
+- Supported Sesame definition questions return grounded answers with inline citations.
+- Obviously unsupported questions return a cautious insufficient-evidence answer instead of a world-knowledge answer.
+- Insufficient-evidence answers return an empty `used_sources` list.
+
+Known limitations:
+
+- This is grounded QA only; summary, compare, and richer answer modes are not implemented yet.
+- Answer quality depends on retrieval quality. If retrieval selects the wrong paper, generation can still answer from the wrong evidence.
+- Typo-heavy metadata queries, such as misspelled paper names or author lookups, are weak because retrieval is optimized for chunked content QA rather than normalized metadata search.
+- Broad ambiguous terms like "threat model" may retrieve the wrong paper when multiple papers use similar language.
+- The unsupported-question guard is heuristic and should be evaluated systematically in Phase 8.
 
 ### Phase 8. Evaluation Harness
 

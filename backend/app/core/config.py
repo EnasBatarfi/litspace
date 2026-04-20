@@ -15,9 +15,14 @@ class Settings(BaseSettings):
     sqlite_path: str = "../data/litspace.db"
 
     embedding_model: str = "BAAI/bge-small-en-v1.5"
-    generator_mode: str = "local"
-    generator_model: str = "local-placeholder"
-    openai_api_key: str = ""
+
+    llm_provider: str = "ollama"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen2.5:7b-instruct"
+
+    default_answer_top_k: int = 6
+    default_answer_max_tokens: int = 500
+    default_answer_temperature: float = 0.1
 
     model_config = SettingsConfigDict(
         env_file=".env",

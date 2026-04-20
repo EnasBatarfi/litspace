@@ -1,4 +1,4 @@
-# This file defines the API endpoint for retrieving evidence from a project based on a query.
+# This file defines the API endpoint for retrieving evidence based on a query for a specific project.
 
 from __future__ import annotations
 
@@ -8,9 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.project import Project
 from app.schemas.retrieval import RetrievalRequest, RetrievalResponse, RetrievalHit
-from app.services.retrieval.bm25_retriever import lexical_retrieve
-from app.services.retrieval.chroma_retriever import semantic_retrieve
-from app.services.retrieval.hybrid import reciprocal_rank_fusion
+from app.services.retrieval.pipeline import hybrid_retrieve
 
 router = APIRouter(prefix="/projects", tags=["retrieval"])
 
@@ -29,19 +27,9 @@ def retrieve_project_evidence(
         )
 
     try:
-        semantic_hits = semantic_retrieve(
+        merged_hits = hybrid_retrieve(
             project_slug=project.slug,
             query=request.query,
-            top_k=max(request.top_k, 10),
-        )
-        lexical_hits = lexical_retrieve(
-            project_slug=project.slug,
-            query=request.query,
-            top_k=max(request.top_k, 10),
-        )
-        merged_hits = reciprocal_rank_fusion(
-            semantic_hits=semantic_hits,
-            lexical_hits=lexical_hits,
             top_k=request.top_k,
         )
     except Exception as exc:
