@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 class AskRequest(BaseModel):
     query: str = Field(min_length=3)
+    chat_id: int | None = None
     top_k: int = Field(default=6, ge=1, le=12)
     max_output_tokens: int = Field(default=500, ge=100, le=1200)
     temperature: float = Field(default=0.1, ge=0.0, le=1.0)
@@ -26,6 +27,7 @@ class AnswerSource(BaseModel):
 class AskResponse(BaseModel):
     project_id: int
     project_slug: str
+    chat_id: int | None = None
     query: str
     answer: str
     insufficient_evidence: bool

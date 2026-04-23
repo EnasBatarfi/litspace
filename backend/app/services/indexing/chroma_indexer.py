@@ -11,7 +11,7 @@ def get_collection_name(project_slug: str) -> str:
     return f"litspace__{project_slug}"
 
 
-def recreate_project_collection(project_slug: str):
+def delete_project_collection(project_slug: str) -> None:
     client = chromadb.PersistentClient(path=str(get_chroma_persist_dir()))
     collection_name = get_collection_name(project_slug)
 
@@ -19,6 +19,13 @@ def recreate_project_collection(project_slug: str):
         client.delete_collection(collection_name)
     except Exception:
         pass
+
+
+def recreate_project_collection(project_slug: str):
+    client = chromadb.PersistentClient(path=str(get_chroma_persist_dir()))
+    collection_name = get_collection_name(project_slug)
+
+    delete_project_collection(project_slug)
 
     collection = client.create_collection(
         name=collection_name,

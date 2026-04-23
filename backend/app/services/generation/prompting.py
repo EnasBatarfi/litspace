@@ -13,6 +13,8 @@ def build_system_prompt() -> str:
         "Do not guess. "
         "Do not answer from background knowledge. "
         "Use inline citations like [S1], [S2]. "
+        "Do not group citations like [S1, S2]. "
+        "Write each citation separately, like [S1] [S2]. "
         "Only cite a source if it directly supports the statement."
     )
 
@@ -42,7 +44,7 @@ def build_user_prompt(query: str, hits: list[dict]) -> str:
         f"Sources:\n{joined_sources}\n\n"
         "Instructions:\n"
         "1. Answer using only the provided sources.\n"
-        "2. Use inline citations like [S1] or [S2].\n"
+        "2. Use inline citations like [S1] or [S2]. Never group them as [S1, S2]; write [S1] [S2].\n"
         "3. If the sources do not answer the question, say exactly: "
         "'Insufficient evidence in the provided sources.'\n"
         "4. Do not guess.\n"

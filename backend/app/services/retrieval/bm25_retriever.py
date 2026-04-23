@@ -17,6 +17,9 @@ def lexical_retrieve(
     top_k: int = 10,
 ) -> list[dict]:
     bm25_path = get_project_bm25_path(project_slug)
+    if not bm25_path.exists():
+        return []
+
     payload = json.loads(Path(bm25_path).read_text(encoding="utf-8"))
 
     entries = payload["entries"]

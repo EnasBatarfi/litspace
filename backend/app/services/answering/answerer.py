@@ -9,6 +9,7 @@ from app.services.llm.client import generate_answer_text
 from app.services.retrieval.pipeline import hybrid_retrieve
 
 
+SOURCE_GROUP_RE = re.compile(r"\[((?:S\d+(?:\s*,\s*S\d+)*))\]")
 SOURCE_TAG_RE = re.compile(r"\[S(\d+)\]")
 TOKEN_RE = re.compile(r"[a-zA-Z0-9_]+")
 
@@ -22,6 +23,22 @@ def _excerpt(text: str, max_chars: int = 500) -> str:
 
 def _tokenize(text: str) -> set[str]:
     return {token.lower() for token in TOKEN_RE.findall(text)}
+
+
+def _normalize_citation_groups(answer: str) -> str:
+    def replacer(match: re.Match[str]) -> str:
+        source_ids = [source_id.strip() for source_id in match.group(1).split(",")]
+        return " ".join(f"[{source_id}]" for source_id in source_ids)
+
+    return SOURCE_GROUP_RE.sub(replacer, answer)
+
+
+def _extract_cited_source_numbers(answer: str, max_hits: int) -> set[int]:
+    return {
+        int(match.group(1))
+        for match in SOURCE_TAG_RE.finditer(answer)
+        if 1 <= int(match.group(1)) <= max_hits
+    }
 
 
 def _has_sufficient_evidence(query: str, hits: list[dict]) -> bool:
@@ -109,6 +126,7 @@ def ask_project(
         max_output_tokens=max_output_tokens,
     )
 
+    answer = _normalize_citation_groups(answer)
     normalized = answer.lower()
     insufficient = (
         "insufficient evidence" in normalized
@@ -127,11 +145,7 @@ def ask_project(
             "used_sources": [],
         }
 
-    cited_source_numbers = {
-        int(match.group(1))
-        for match in SOURCE_TAG_RE.finditer(answer)
-        if 1 <= int(match.group(1)) <= len(hits)
-    }
+    cited_source_numbers = _extract_cited_source_numbers(answer, len(hits))
 
     if not cited_source_numbers:
         cited_source_numbers = set(range(1, min(len(hits), 3) + 1))

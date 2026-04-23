@@ -2,6 +2,7 @@
 # The paths are constructed based on the backend directory and settings defined in the configuration. The utility functions allow for easy management of project-specific directories, ensuring that the necessary structure is in place for storing data related to different projects.
 
 from pathlib import Path
+import shutil
 
 from app.core.config import settings
 
@@ -39,6 +40,12 @@ def ensure_project_directories(project_slug: str) -> None:
     get_project_raw_dir(project_slug).mkdir(parents=True, exist_ok=True)
     get_project_processed_dir(project_slug).mkdir(parents=True, exist_ok=True)
     get_project_index_dir(project_slug).mkdir(parents=True, exist_ok=True)
+
+
+def delete_project_directories(project_slug: str) -> None:
+    shutil.rmtree(get_project_raw_dir(project_slug), ignore_errors=True)
+    shutil.rmtree(get_project_processed_dir(project_slug), ignore_errors=True)
+    shutil.rmtree(get_project_index_dir(project_slug), ignore_errors=True)
 
 
 def get_processed_document_path(project_slug: str, paper_id: int) -> Path:

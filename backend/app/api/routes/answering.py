@@ -2,16 +2,28 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.db.session import get_db
+from app.models.chat import Chat
+from app.models.message import Message
 from app.models.project import Project
 from app.schemas.answering import AskRequest, AskResponse, AnswerSource
 from app.services.answering.answerer import ask_project
 
 router = APIRouter(prefix="/projects", tags=["answering"])
+
+
+def build_chat_title(query: str) -> str:
+    compact = " ".join(query.split()).strip()
+    if len(compact) <= 56:
+        return compact
+    return f"{compact[:53]}..."
 
 
 @router.post("/{project_id}/ask", response_model=AskResponse)
@@ -26,6 +38,19 @@ def ask_project_question(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Project {project_id} not found",
         )
+
+    chat: Chat | None = None
+    if request.chat_id is not None:
+        chat = db.scalar(
+            select(Chat)
+            .where(Chat.id == request.chat_id)
+            .options(selectinload(Chat.messages))
+        )
+        if chat is None or chat.project_id != project.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Chat {request.chat_id} not found in project {project_id}",
+            )
 
     try:
         result = ask_project(
@@ -42,9 +67,41 @@ def ask_project_question(
             detail=f"Answer generation failed: {exc}",
         ) from exc
 
+    if chat is not None:
+        is_first_user_turn = not any(message.role == "user" for message in chat.messages)
+
+        db.add(
+            Message(
+                chat_id=chat.id,
+                role="user",
+                content=request.query,
+                sources=[],
+                insufficient_evidence=False,
+                retrieval_hits_count=0,
+            )
+        )
+        db.add(
+            Message(
+                chat_id=chat.id,
+                role="assistant",
+                content=result["answer"],
+                sources=result["used_sources"],
+                insufficient_evidence=result["insufficient_evidence"],
+                retrieval_hits_count=result["retrieval_hits_count"],
+            )
+        )
+
+        if is_first_user_turn or chat.title.strip().lower() == "new chat":
+            chat.title = build_chat_title(request.query)
+
+        chat.updated_at = dt.datetime.now(dt.UTC)
+        db.add(chat)
+        db.commit()
+
     return AskResponse(
         project_id=result["project_id"],
         project_slug=result["project_slug"],
+        chat_id=chat.id if chat is not None else None,
         query=result["query"],
         answer=result["answer"],
         insufficient_evidence=result["insufficient_evidence"],

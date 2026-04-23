@@ -15,7 +15,9 @@ from app.db.session import get_db
 from app.models.paper import Paper
 from app.models.project import Project
 from app.schemas.paper import PaperListItem, PaperRead
+from app.services.indexing.project_index_manager import clear_project_indexes, sync_project_indexes
 from app.services.storage import save_uploaded_pdf
+from app.utils.paths import get_chunk_document_path, resolve_repo_relative_path
 
 router = APIRouter(prefix="/projects", tags=["papers"])
 
@@ -112,3 +114,37 @@ def list_project_papers(
     ).all()
 
     return list(papers)
+
+
+@router.delete(
+    "/{project_id}/papers/{paper_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_project_paper(
+    project_id: int,
+    paper_id: int,
+    db: Session = Depends(get_db),
+) -> None:
+    project = get_project_or_404(project_id, db)
+    paper = db.get(Paper, paper_id)
+    if paper is None or paper.project_id != project.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Paper {paper_id} not found in project {project_id}",
+        )
+
+    file_paths = [resolve_repo_relative_path(paper.file_path)]
+    if paper.processed_path:
+        file_paths.append(resolve_repo_relative_path(paper.processed_path))
+    file_paths.append(get_chunk_document_path(project.slug, paper.id))
+
+    db.delete(paper)
+    db.commit()
+
+    for file_path in file_paths:
+        file_path.unlink(missing_ok=True)
+
+    try:
+        sync_project_indexes(project, db)
+    except Exception:
+        clear_project_indexes(project.slug)

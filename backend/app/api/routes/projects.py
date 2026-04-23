@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.project import Project
+from app.services.indexing.chroma_indexer import delete_project_collection
+from app.utils.paths import delete_project_directories
 from app.schemas.project import ProjectCreate, ProjectListItem, ProjectRead
 from app.utils.paths import ensure_project_directories
 from app.utils.slug import slugify
@@ -56,3 +58,21 @@ def get_project(project_id: int, db: Session = Depends(get_db)) -> Project:
             detail=f"Project {project_id} not found",
         )
     return project
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(project_id: int, db: Session = Depends(get_db)) -> None:
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project {project_id} not found",
+        )
+
+    project_slug = project.slug
+
+    db.delete(project)
+    db.commit()
+
+    delete_project_collection(project_slug)
+    delete_project_directories(project_slug)

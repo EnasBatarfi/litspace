@@ -15,7 +15,10 @@ def semantic_retrieve(
     top_k: int = 10,
 ) -> list[dict]:
     client = chromadb.PersistentClient(path=str(get_chroma_persist_dir()))
-    collection = client.get_collection(get_collection_name(project_slug))
+    try:
+        collection = client.get_collection(get_collection_name(project_slug))
+    except Exception:
+        return []
 
     query_embedding = embed_texts([query], batch_size=1)[0]
 

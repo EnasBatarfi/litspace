@@ -368,10 +368,11 @@ Primary files/directories touched:
 
 1. [x] Initialize Next.js frontend.
 2. [x] Add frontend API client.
-3. [ ] Add simple project page.
-4. [ ] Add simple upload page.
-5. [ ] Add simple query page.
-6. [ ] Add evidence panel.
+3. [x] Replace the placeholder page with a project workspace shell.
+4. [x] Add project creation, project listing, and project-scoped selection in the UI.
+5. [x] Add project papers panel and evidence panel.
+6. [x] Add a grounded chat composer wired to the backend ask flow.
+7. [x] Add a reusable component structure for the workspace shell.
 
 Primary files/directories touched:
 
@@ -386,7 +387,98 @@ Primary files/directories touched:
 - `frontend/src/app/page.tsx`
 - `frontend/src/app/globals.css`
 - `frontend/src/lib/api.ts`
+- `frontend/src/components/litspace/`
 - `frontend/public/`
+
+### Phase 10. Persistent Workspace UX And Backend Wiring
+
+1. [x] Add backend chat and message models with project-linked chat persistence.
+2. [x] Add `POST /projects/{project_id}/chats`.
+3. [x] Add `GET /projects/{project_id}/chats`.
+4. [x] Add `GET /chats/{chat_id}`.
+5. [x] Add `DELETE /chats/{chat_id}`.
+6. [x] Extend `POST /projects/{project_id}/ask` to accept an optional `chat_id`.
+7. [x] Persist user and assistant turns into chat history.
+8. [x] Update chat titles from the first real user turn instead of creating a new chat for every question.
+9. [x] Add real project delete support with index and directory cleanup.
+10. [x] Add real paper delete support with file cleanup and project index resync.
+11. [x] Add project index synchronization helpers so delete and reindex flows rebuild Chroma and BM25 consistently.
+12. [x] Make semantic and lexical retrieval return empty hits cleanly when a project has no current indexes.
+13. [x] Normalize grouped citations like `[S1, S2]` into separate tags and keep prompt instructions consistent with separate citations.
+14. [x] Wire frontend upload to the full pipeline: upload, parse, chunk, then project reindex.
+15. [x] Replace the placeholder frontend with a real project workspace:
+    - nested project/chat sidebar
+    - project-scoped papers panel
+    - grounded chat thread
+    - sources panel driven by answer citations
+16. [x] Add frontend project creation modal and project-scoped `New Chat` behavior.
+17. [x] Add frontend delete confirmations for project, chat, and paper actions.
+18. [x] Keep citations clickable and open/focus the matching source card in the right panel without reordering the full source list.
+19. [x] Add collapsible papers and sources rails and expand the main chat area when they are closed.
+20. [x] Remove dead or fake controls so only wired actions remain interactive.
+
+Primary files/directories touched:
+
+Backend:
+
+- `backend/app/api/router.py`
+- `backend/app/api/routes/answering.py`
+- `backend/app/api/routes/chats.py`
+- `backend/app/api/routes/indexing.py`
+- `backend/app/api/routes/projects.py`
+- `backend/app/api/routes/upload.py`
+- `backend/app/models/chat.py`
+- `backend/app/models/message.py`
+- `backend/app/models/project.py`
+- `backend/app/models/__init__.py`
+- `backend/app/schemas/answering.py`
+- `backend/app/schemas/chat.py`
+- `backend/app/services/answering/answerer.py`
+- `backend/app/services/generation/prompting.py`
+- `backend/app/services/indexing/chroma_indexer.py`
+- `backend/app/services/indexing/project_index_manager.py`
+- `backend/app/services/retrieval/chroma_retriever.py`
+- `backend/app/services/retrieval/bm25_retriever.py`
+- `backend/app/utils/paths.py`
+
+Frontend:
+
+- `frontend/package.json`
+- `frontend/package-lock.json`
+- `frontend/pnpm-lock.yaml`
+- `frontend/next.config.ts`
+- `frontend/src/app/layout.tsx`
+- `frontend/src/app/page.tsx`
+- `frontend/src/app/globals.css`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/litspace/AppSidebar.tsx`
+- `frontend/src/components/litspace/ChatInputBar.tsx`
+- `frontend/src/components/litspace/ChatThread.tsx`
+- `frontend/src/components/litspace/CreateProjectModal.tsx`
+- `frontend/src/components/litspace/DeleteItemModal.tsx`
+- `frontend/src/components/litspace/PapersPanel.tsx`
+- `frontend/src/components/litspace/QuickActionsBar.tsx`
+- `frontend/src/components/litspace/SourcesPanel.tsx`
+- `frontend/src/components/litspace/WorkspaceHeader.tsx`
+- `frontend/src/components/litspace/WorkspaceShell.tsx`
+- `frontend/src/components/litspace/types.ts`
+
+Current workspace behavior after these changes:
+
+- Projects are the top-level unit.
+- Chats are persisted inside projects and survive refresh.
+- Papers remain project-scoped and shared across chats in the same project.
+- Uploading from the UI now runs the full ingestion pipeline instead of stopping at raw upload.
+- Deleting a paper removes its files and refreshes project indexes.
+- Deleting a project removes the project row, linked chats/messages, vector index collection, BM25 payload, and local project directories.
+- The ask flow can either remain backward compatible without a chat ID or append a multi-turn conversation to an existing chat.
+- The sources panel is driven by citations in the current answer rather than duplicated source cards under each response.
+
+Known limitations after this phase:
+
+- Chat persistence uses new `chats` and `messages` tables, so existing deployments need the backend to restart and create those tables before the full workspace flow is available.
+- `summary`, `compare`, and other quick actions are still UI helpers over the same ask flow, not separate specialized backend answer modes.
+- There is still no authenticated multi-user model; all projects remain local single-user workspace data.
 
 ## Local development
 
