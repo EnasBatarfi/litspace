@@ -49,24 +49,33 @@ function StackIcon() {
   );
 }
 
-function PaperIcon() {
-  return (
-    <span className="relative mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--focus-border)] bg-[var(--brand-teal-soft)]">
-      <span className="absolute left-2 top-2 h-4 w-4 rounded-[4px] border border-[var(--brand-teal)]" />
-    </span>
-  );
-}
-
-function TrashIcon() {
+function CloseIcon() {
   return (
     <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" aria-hidden="true">
       <path
-        d="M4.75 5.5v6m3.25-6v6m3.25-6v6M3.5 4h9M6.25 4V3h3.5v1m-5.5 0 .4 7.05A1 1 0 0 0 5.64 12h4.72a1 1 0 0 0 .99-.95L11.75 4"
+        d="m4.25 4.25 7.5 7.5m0-7.5-7.5 7.5"
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="1.25"
       />
+    </svg>
+  );
+}
+
+function CheckIcon({ checked }: { checked: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" aria-hidden="true">
+      <rect x="2.25" y="2.25" width="11.5" height="11.5" rx="3" stroke="currentColor" strokeWidth="1.2" />
+      {checked ? (
+        <path
+          d="M4.75 8.25 6.9 10.4l4.35-4.55"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.35"
+        />
+      ) : null}
     </svg>
   );
 }
@@ -77,10 +86,12 @@ type PapersPanelProps = {
   activeProjectId: number | null;
   papers: Paper[];
   activePaperId: number | null;
+  selectedPaperIds: number[];
   loading: boolean;
   error: string | null;
   onToggle: () => void;
   onPaperSelect: (paperId: number) => void;
+  onPaperToggleSelect: (paperId: number) => void;
   onDeletePaper: (projectId: number, paperId: number) => void;
 };
 
@@ -114,15 +125,21 @@ function getStatusLabel(status: string) {
 
 function PaperCard({
   paper,
+  order,
   projectId,
   active,
+  selected,
   onPaperSelect,
+  onPaperToggleSelect,
   onDeletePaper,
 }: {
   paper: Paper;
+  order: number;
   projectId: number | null;
   active: boolean;
+  selected: boolean;
   onPaperSelect: (paperId: number) => void;
+  onPaperToggleSelect: (paperId: number) => void;
   onDeletePaper: (projectId: number, paperId: number) => void;
 }) {
   return (
@@ -136,33 +153,65 @@ function PaperCard({
     >
       <button
         type="button"
-        onClick={() => onPaperSelect(paper.id)}
-        className="flex min-w-0 flex-1 items-start gap-3 text-left"
+        onClick={() => onPaperToggleSelect(paper.id)}
+        aria-pressed={selected}
+        aria-label={
+          selected
+            ? `Remove ${getPaperTitle(paper)} from selected context papers`
+            : `Select ${getPaperTitle(paper)} as a context hint`
+        }
+        title={selected ? "Remove from selected papers" : "Select as a context hint"}
+        className={[
+          "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-md border transition",
+          selected
+            ? "border-[var(--brand-teal)] bg-[var(--brand-teal-soft)] text-[var(--brand-teal)]"
+            : "border-slate-200 bg-white text-slate-400 hover:border-[var(--focus-border)] hover:bg-white hover:text-slate-700",
+        ].join(" ")}
       >
-        <PaperIcon />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-slate-900">
-            {getPaperTitle(paper)}
-          </span>
-          <span className="mt-1 block truncate text-xs text-slate-500">{getPaperMeta(paper)}</span>
-          <span className="mt-2 inline-flex rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
-            {getStatusLabel(paper.status)}
-          </span>
-        </span>
+        <CheckIcon checked={selected} />
       </button>
 
       <button
         type="button"
-        onClick={() => {
-          if (projectId) {
-            onDeletePaper(projectId, paper.id);
-          }
-        }}
-        aria-label={`Delete paper ${getPaperTitle(paper)}`}
-        className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 opacity-0 transition hover:bg-white hover:text-rose-600 group-hover:opacity-100"
+        onClick={() => onPaperSelect(paper.id)}
+        className="flex min-w-0 flex-1 items-start gap-3 text-left"
       >
-        <TrashIcon />
+        <span
+          className={[
+            "mt-0.5 inline-flex h-8 min-w-[32px] items-center justify-center rounded-full px-2 text-xs font-semibold",
+            "bg-slate-100 text-slate-500",
+          ].join(" ")}
+          aria-label={`Paper ${order}`}
+        >
+          {order}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold leading-5 text-slate-900">
+            {getPaperTitle(paper)}
+          </span>
+          <span className="mt-1 block truncate text-xs text-slate-500">{getPaperMeta(paper)}</span>
+          <span className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="inline-flex rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+              {getStatusLabel(paper.status)}
+            </span>
+          </span>
+        </span>
       </button>
+
+      <div className="mt-1 flex shrink-0 items-center">
+        <button
+          type="button"
+          onClick={() => {
+            if (projectId) {
+              onDeletePaper(projectId, paper.id);
+            }
+          }}
+          aria-label={`Delete paper ${getPaperTitle(paper)}`}
+          className="flex h-8 w-8 items-center justify-center rounded-md text-slate-400 opacity-0 transition hover:bg-white hover:text-rose-600 group-hover:opacity-100"
+        >
+          <CloseIcon />
+        </button>
+      </div>
     </div>
   );
 }
@@ -173,13 +222,24 @@ export function PapersPanel({
   activeProjectId,
   papers,
   activePaperId,
+  selectedPaperIds,
   loading,
   error,
   onToggle,
   onPaperSelect,
+  onPaperToggleSelect,
   onDeletePaper,
 }: PapersPanelProps) {
   const [query, setQuery] = useState("");
+  const selectedPaperIdSet = useMemo(() => new Set(selectedPaperIds), [selectedPaperIds]);
+  const indexedCount = useMemo(
+    () => papers.filter((paper) => paper.status === "indexed").length,
+    [papers],
+  );
+  const paperOrderById = useMemo(
+    () => new Map(papers.map((paper, index) => [paper.id, index + 1])),
+    [papers],
+  );
 
   const filteredPapers = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -233,13 +293,15 @@ export function PapersPanel({
       <div className="border-b border-slate-200 px-5 py-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-slate-950">Papers</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-slate-950">Papers</h2>
+              <span className="text-xs font-medium text-slate-400">
+                {indexedCount}/{papers.length || 0} indexed
+              </span>
+            </div>
             <p className="mt-1 text-sm text-slate-500">Documents shared across chats</p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-slate-600 shadow-sm">
-              {papers.length}
-            </span>
+          <div className="flex items-center">
             <button
               type="button"
               onClick={onToggle}
@@ -288,9 +350,12 @@ export function PapersPanel({
               <PaperCard
                 key={paper.id}
                 paper={paper}
+                order={paperOrderById.get(paper.id) || 0}
                 projectId={activeProjectId}
                 active={paper.id === activePaperId}
+                selected={selectedPaperIdSet.has(paper.id)}
                 onPaperSelect={onPaperSelect}
+                onPaperToggleSelect={onPaperToggleSelect}
                 onDeletePaper={onDeletePaper}
               />
             ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   askProject,
   chunkPaper,
@@ -15,6 +15,8 @@ import {
   listProjectPapers,
   listProjects,
   parsePaper,
+  updateChat,
+  updateProject,
   uploadProjectPaper,
   type Chat,
   type ChatMessage,
@@ -94,11 +96,36 @@ function toChatSummary(chat: Chat): ChatSummary {
   };
 }
 
+function validateQueryInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (!/[a-z0-9]/i.test(trimmed)) {
+    return "Use words or paper numbers in the message.";
+  }
+  return null;
+}
+
+function sortPapersForDisplay(papers: Paper[]) {
+  return [...papers].sort((left, right) => {
+    const createdAtDelta =
+      new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+    if (createdAtDelta !== 0) {
+      return createdAtDelta;
+    }
+    return right.id - left.id;
+  });
+}
+
 export function WorkspaceShell() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
   const [activePaperId, setActivePaperId] = useState<number | null>(null);
+  const [selectedPaperIdsByProjectId, setSelectedPaperIdsByProjectId] = useState<
+    Record<number, number[]>
+  >({});
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
   const [chatsByProjectId, setChatsByProjectId] = useState<Record<number, ChatSummary[]>>({});
   const [chatDetailsById, setChatDetailsById] = useState<Record<number, Chat>>({});
@@ -121,6 +148,8 @@ export function WorkspaceShell() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const selectedPaperIdsRef = useRef<number[]>([]);
+  const paperOrderIdsRef = useRef<number[]>([]);
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) || null,
@@ -158,6 +187,16 @@ export function WorkspaceShell() {
     [papers],
   );
 
+  const selectedPaperIds = useMemo(
+    () => (activeProjectId ? selectedPaperIdsByProjectId[activeProjectId] || [] : []),
+    [activeProjectId, selectedPaperIdsByProjectId],
+  );
+
+  const selectedPapers = useMemo(() => {
+    const selectedSet = new Set(selectedPaperIds);
+    return papers.filter((paper) => selectedSet.has(paper.id));
+  }, [papers, selectedPaperIds]);
+
   const selectedSources = useMemo(() => {
     if (!selectedCitation) {
       return [];
@@ -183,12 +222,21 @@ export function WorkspaceShell() {
   }, [chatDetailsById, selectedCitation]);
 
   const activeDraft = activeChatId ? draftByChatId[activeChatId] || "" : "";
+  const activeDraftValidation = validateQueryInput(activeDraft);
   const activeChatError = activeChatId ? chatErrors[activeChatId] || null : null;
   const answerLoading = activeChatId ? Boolean(submittingChatIds[activeChatId]) : false;
   const chatLoading =
     activeChatId !== null &&
     chatDetailLoadingId === activeChatId &&
     !chatDetailsById[activeChatId];
+
+  useEffect(() => {
+    selectedPaperIdsRef.current = selectedPaperIds;
+  }, [selectedPaperIds]);
+
+  useEffect(() => {
+    paperOrderIdsRef.current = papers.map((paper) => paper.id);
+  }, [papers]);
 
   function upsertChat(chat: Chat) {
     setChatDetailsById((current) => ({ ...current, [chat.id]: chat }));
@@ -279,14 +327,23 @@ export function WorkspaceShell() {
         setPapersLoading(true);
         setPaperError(null);
         const data = await listProjectPapers(projectId);
+        const orderedPapers = sortPapersForDisplay(data);
         if (!mounted) {
           return;
         }
 
-        setPapers(data);
+        setPapers(orderedPapers);
         setActivePaperId((current) =>
-          current && data.some((paper) => paper.id === current) ? current : data[0]?.id ?? null,
+          current && orderedPapers.some((paper) => paper.id === current)
+            ? current
+            : orderedPapers[0]?.id ?? null,
         );
+        setSelectedPaperIdsByProjectId((current) => ({
+          ...current,
+          [projectId]: (current[projectId] || []).filter((paperId) =>
+            orderedPapers.some((paper) => paper.id === paperId),
+          ),
+        }));
       } catch (error) {
         if (mounted) {
           setPaperError(error instanceof Error ? error.message : "Failed to load papers");
@@ -514,6 +571,11 @@ export function WorkspaceShell() {
         const remainingProjects = projects.filter((project) => project.id !== target.projectId);
 
         setProjects(remainingProjects);
+        setSelectedPaperIdsByProjectId((current) => {
+          const next = { ...current };
+          delete next[target.projectId];
+          return next;
+        });
         setChatsByProjectId((current) => {
           const next = { ...current };
           delete next[target.projectId];
@@ -569,13 +631,19 @@ export function WorkspaceShell() {
 
       if (target.kind === "paper") {
         await deleteProjectPaper(target.projectId, target.paperId);
-        const refreshedPapers = await listProjectPapers(target.projectId);
+        const refreshedPapers = sortPapersForDisplay(await listProjectPapers(target.projectId));
         setPapers(refreshedPapers);
         setActivePaperId((current) =>
           current && refreshedPapers.some((paper) => paper.id === current)
             ? current
             : refreshedPapers[0]?.id ?? null,
         );
+        setSelectedPaperIdsByProjectId((current) => ({
+          ...current,
+          [target.projectId]: (current[target.projectId] || []).filter(
+            (paperId) => paperId !== target.paperId && refreshedPapers.some((paper) => paper.id === paperId),
+          ),
+        }));
       }
 
       setDeleteTarget(null);
@@ -594,6 +662,7 @@ export function WorkspaceShell() {
 
       setProjects((current) => [project, ...current]);
       setChatsByProjectId((current) => ({ ...current, [project.id]: [] }));
+      setSelectedPaperIdsByProjectId((current) => ({ ...current, [project.id]: [] }));
       setActiveProjectId(project.id);
       setActiveChatId(null);
       setExpandedProjectIds((current) => ({ ...current, [project.id]: true }));
@@ -609,14 +678,23 @@ export function WorkspaceShell() {
     }
   }
 
-  async function handleSubmit() {
-    const query = activeDraft.trim();
-    if (!activeProjectId || !activeChatId || !activeChat || query.length < 3 || answerLoading) {
+  async function submitQuery(rawQuery: string) {
+    const query = rawQuery.trim();
+    if (
+      !activeProjectId ||
+      !activeChatId ||
+      !activeChat ||
+      query.length < 1 ||
+      answerLoading ||
+      validateQueryInput(query)
+    ) {
       return;
     }
 
     const projectId = activeProjectId;
     const chatId = activeChatId;
+    const selectedPaperIdsForRequest = [...selectedPaperIdsRef.current];
+    const paperOrderIdsForRequest = [...paperOrderIdsRef.current];
     const previousChat = {
       ...activeChat,
       messages: [...activeChat.messages],
@@ -653,6 +731,8 @@ export function WorkspaceShell() {
       await askProject(projectId, {
         query,
         chat_id: chatId,
+        selected_paper_ids: selectedPaperIdsForRequest,
+        paper_order_ids: paperOrderIdsForRequest,
         top_k: 6,
         max_output_tokens: 500,
         temperature: 0.1,
@@ -668,6 +748,10 @@ export function WorkspaceShell() {
     } finally {
       setSubmittingChatIds((current) => ({ ...current, [chatId]: false }));
     }
+  }
+
+  async function handleSubmit() {
+    await submitQuery(activeDraft);
   }
 
   async function handleUploadFiles(files: FileList | null) {
@@ -709,11 +793,17 @@ export function WorkspaceShell() {
         }
       }
 
-      const data = await listProjectPapers(projectId);
+      const data = sortPapersForDisplay(await listProjectPapers(projectId));
       setPapers(data);
       setActivePaperId((current) =>
         current && data.some((paper) => paper.id === current) ? current : data[0]?.id ?? null,
       );
+      setSelectedPaperIdsByProjectId((current) => ({
+        ...current,
+        [projectId]: (current[projectId] || []).filter((paperId) =>
+          data.some((paper) => paper.id === paperId),
+        ),
+      }));
 
       if (uploadErrors.length > 0) {
         setPaperError(uploadErrors.join(" "));
@@ -730,15 +820,18 @@ export function WorkspaceShell() {
       return;
     }
 
-    const templates: Record<string, string> = {
-      Summarize: "Summarize the main argument across the indexed papers.",
-      Compare: "Compare the main defense approaches across these papers.",
-      "Find Evidence": "Find evidence about the strongest limitations discussed in the papers.",
+    const quickQueries: Record<string, string> = {
+      Summarize:
+        "Summarize all papers in this project. Focus on <objective>, <method>, <key findings>, and <limitations>.",
+      Compare:
+        "Compare all papers in this project in terms of <criterion 1>, <criterion 2>, and <criterion 3>.",
+      "Find Evidence":
+        "Find evidence across all papers in this project for the following claim or topic: <claim or topic>.",
     };
 
     setDraftByChatId((current) => ({
       ...current,
-      [activeChatId]: templates[action] || current[activeChatId] || "",
+      [activeChatId]: quickQueries[action] || current[activeChatId] || "",
     }));
   }
 
@@ -748,6 +841,56 @@ export function WorkspaceShell() {
     }
 
     setDraftByChatId((current) => ({ ...current, [activeChatId]: value }));
+  }
+
+  function handlePaperFocus(paperId: number) {
+    setActivePaperId(paperId);
+  }
+
+  function handlePaperSelectionToggle(paperId: number) {
+    if (!activeProjectId) {
+      return;
+    }
+
+    setSelectedPaperIdsByProjectId((current) => {
+      const selectedIds = current[activeProjectId] || [];
+      const nextIds = selectedIds.includes(paperId)
+        ? selectedIds.filter((id) => id !== paperId)
+        : [...selectedIds, paperId];
+      selectedPaperIdsRef.current = nextIds;
+
+      return {
+        ...current,
+        [activeProjectId]: nextIds,
+      };
+    });
+  }
+
+  function handleRemoveSelectedPaper(paperId: number) {
+    if (!activeProjectId) {
+      return;
+    }
+
+    setSelectedPaperIdsByProjectId((current) => {
+      const nextIds = (current[activeProjectId] || []).filter((id) => id !== paperId);
+      selectedPaperIdsRef.current = nextIds;
+      return {
+        ...current,
+        [activeProjectId]: nextIds,
+      };
+    });
+  }
+
+  async function handleRenameProject(projectId: number, name: string) {
+    const updatedProject = await updateProject(projectId, { name });
+    setProjects((current) =>
+      current.map((project) => (project.id === projectId ? updatedProject : project)),
+    );
+  }
+
+  async function handleRenameChat(chatId: number, title: string) {
+    const updatedChat = await updateChat(chatId, { title });
+    upsertChat(updatedChat);
   }
 
   function handleCitationClick(messageId: number, sourceId: string) {
@@ -785,6 +928,8 @@ export function WorkspaceShell() {
           onProjectToggle={handleProjectToggle}
           onChatSelect={handleChatSelect}
           onNewChat={handleNewChat}
+          onRenameProject={handleRenameProject}
+          onRenameChat={handleRenameChat}
           onDeleteProject={handleRequestDeleteProject}
           onDeleteChat={handleRequestDeleteChat}
         />
@@ -805,10 +950,12 @@ export function WorkspaceShell() {
               activeProjectId={activeProjectId}
               papers={papers}
               activePaperId={activePaperId}
+              selectedPaperIds={selectedPaperIds}
               loading={papersLoading || projectsLoading}
               error={paperError || null}
               onToggle={() => setPapersPanelOpen((current) => !current)}
-              onPaperSelect={setActivePaperId}
+              onPaperSelect={handlePaperFocus}
+              onPaperToggleSelect={handlePaperSelectionToggle}
               onDeletePaper={handleRequestDeletePaper}
             />
 
@@ -818,15 +965,18 @@ export function WorkspaceShell() {
               hasChat={Boolean(activeChatSummary)}
               paperCount={papers.length}
               messages={activeChat?.messages || []}
+              selectedPapers={selectedPapers}
               selectedCitation={selectedCitation}
               draft={activeDraft}
               loading={answerLoading || chatLoading}
               error={activeChatError || projectError}
+              validationMessage={activeDraftValidation}
               disabled={!activeProjectId || !activeChatId || !activeChat || projectsLoading || answerLoading}
               onDraftChange={handleDraftChange}
               onSubmit={handleSubmit}
               onCitationClick={handleCitationClick}
               onQuickAction={handleQuickAction}
+              onRemoveSelectedPaper={handleRemoveSelectedPaper}
               onOpenCreateProject={() => {
                 setCreateProjectError(null);
                 setCreateProjectOpen(true);

@@ -13,6 +13,7 @@ def semantic_retrieve(
     project_slug: str,
     query: str,
     top_k: int = 10,
+    paper_ids: list[int] | None = None,
 ) -> list[dict]:
     client = chromadb.PersistentClient(path=str(get_chroma_persist_dir()))
     try:
@@ -22,11 +23,15 @@ def semantic_retrieve(
 
     query_embedding = embed_texts([query], batch_size=1)[0]
 
-    result = collection.query(
-        query_embeddings=[query_embedding.tolist()],
-        n_results=top_k,
-        include=["documents", "metadatas", "distances"],
-    )
+    query_kwargs = {
+        "query_embeddings": [query_embedding.tolist()],
+        "n_results": top_k,
+        "include": ["documents", "metadatas", "distances"],
+    }
+    if paper_ids:
+        query_kwargs["where"] = {"paper_id": {"$in": paper_ids}}
+
+    result = collection.query(**query_kwargs)
 
     ids = result.get("ids", [[]])[0]
     documents = result.get("documents", [[]])[0]

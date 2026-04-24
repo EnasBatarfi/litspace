@@ -8,14 +8,14 @@ export function QuickActionsBar({
   onActionSelect: (action: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2 border-b border-slate-100 px-5 py-3">
+    <div className="flex flex-wrap gap-2 px-5 pt-4">
       {actions.map((action) => (
         <button
           key={action}
           type="button"
           disabled={disabled}
           onClick={() => onActionSelect(action)}
-          className="rounded-md border border-[var(--border-soft)] bg-[var(--surface-muted)] px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:border-[var(--focus-border)] hover:bg-[var(--brand-teal-soft)] hover:text-[var(--brand-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-[13px] font-medium text-slate-600 transition hover:border-[var(--focus-border)] hover:bg-[var(--brand-teal-soft)] hover:text-[var(--brand-ink)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {action}
         </button>

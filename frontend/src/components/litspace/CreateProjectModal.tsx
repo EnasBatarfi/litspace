@@ -72,7 +72,7 @@ export function CreateProjectModal({
                 setForm((current) => ({ ...current, name: event.target.value }))
               }
               className="w-full rounded-md border border-[var(--border-soft)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[var(--focus-border)] focus:bg-white focus:ring-2 focus:ring-[var(--focus-ring)]"
-              placeholder="AI Safety Reading Group"
+              placeholder="Enter a project name"
             />
           </label>
 
@@ -84,7 +84,7 @@ export function CreateProjectModal({
                 setForm((current) => ({ ...current, topicLabel: event.target.value }))
               }
               className="w-full rounded-md border border-[var(--border-soft)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[var(--focus-border)] focus:bg-white focus:ring-2 focus:ring-[var(--focus-ring)]"
-              placeholder="LLM Safety"
+              placeholder="Optional short label"
             />
           </label>
 
@@ -97,7 +97,7 @@ export function CreateProjectModal({
                 setForm((current) => ({ ...current, description: event.target.value }))
               }
               className="w-full resize-none rounded-md border border-[var(--border-soft)] bg-[var(--surface-muted)] px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[var(--focus-border)] focus:bg-white focus:ring-2 focus:ring-[var(--focus-ring)]"
-              placeholder="Grounded Q&A workspace for project papers, experiments, and notes."
+              placeholder="Optional description of the project scope, source collection, or research goals."
             />
           </label>
 

@@ -2,6 +2,7 @@
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     app_name: str = "LitSpace"
     app_env: str = "development"
@@ -16,7 +17,24 @@ class Settings(BaseSettings):
 
     embedding_model: str = "BAAI/bge-small-en-v1.5"
 
-    llm_provider: str = "ollama"
+    llm_provider: str = "openai"
+    llm_fallback_enabled: bool = True
+    llm_provider_chain: str | None = "openai,ollama"
+
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
+
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-5.4-mini"
+    openai_base_url: str = "https://api.openai.com/v1"
+
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-haiku-4-5"
+    anthropic_base_url: str = "https://api.anthropic.com/v1"
+
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen2.5:7b-instruct"
+
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen2.5:7b-instruct"
 
@@ -29,5 +47,6 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
 
 settings = Settings()

@@ -79,6 +79,8 @@ export type AskResponse = {
 export type AskPayload = {
   query: string;
   chat_id?: number | null;
+  selected_paper_ids?: number[];
+  paper_order_ids?: number[];
   top_k: number;
   max_output_tokens: number;
   temperature: number;
@@ -92,6 +94,14 @@ export type CreateProjectPayload = {
 
 export type CreateChatPayload = {
   title?: string | null;
+};
+
+export type UpdateProjectPayload = {
+  name: string;
+};
+
+export type UpdateChatPayload = {
+  title: string;
 };
 
 export type ProjectIndexResponse = {
@@ -171,6 +181,18 @@ export async function deleteProject(projectId: number): Promise<void> {
   return throwIfNotOk(res);
 }
 
+export async function updateProject(
+  projectId: number,
+  payload: UpdateProjectPayload,
+): Promise<Project> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJsonOrThrow<Project>(res);
+}
+
 export async function listProjectChats(projectId: number): Promise<ChatSummary[]> {
   const res = await fetch(`${API_BASE}/projects/${projectId}/chats`, {
     cache: "no-store",
@@ -202,6 +224,18 @@ export async function deleteChat(chatId: number): Promise<void> {
     method: "DELETE",
   });
   return throwIfNotOk(res);
+}
+
+export async function updateChat(
+  chatId: number,
+  payload: UpdateChatPayload,
+): Promise<Chat> {
+  const res = await fetch(`${API_BASE}/chats/${chatId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJsonOrThrow<Chat>(res);
 }
 
 export async function listProjectPapers(projectId: number): Promise<Paper[]> {

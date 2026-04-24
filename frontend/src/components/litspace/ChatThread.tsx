@@ -1,22 +1,58 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import type { ChatMessage } from "@/lib/api";
+import { Fragment, useEffect, useRef, useState } from "react";
+import type { ChatMessage, Paper } from "@/lib/api";
 import { ChatInputBar } from "./ChatInputBar";
 import { QuickActionsBar } from "./QuickActionsBar";
 import type { SelectedCitation } from "./types";
 
-const CITATION_GROUP_RE = /\[(?:S\d+(?:,\s*S\d+)*)\]/g;
-const CITATION_TOKEN_RE = /^\[((?:S\d+(?:,\s*S\d+)*))\]$/;
+const INLINE_TOKEN_RE = /(\*\*([^*]+)\*\*|\[((?:S\d+(?:\s*,\s*S\d+)*))\])/g;
+const UNORDERED_LIST_RE = /^\s*[-*]\s+(.*)$/;
+const ORDERED_LIST_RE = /^\s*\d+\.\s+(.*)$/;
+const BLOCKQUOTE_RE = /^\s*>\s?(.*)$/;
+const HEADING_RE = /^(#{1,6})\s+(.*)$/;
+const TABLE_SEPARATOR_RE = /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/;
 
-type AnswerSegment =
+type InlineNode =
   | {
       type: "text";
       content: string;
     }
   | {
+      type: "bold";
+      children: InlineNode[];
+    }
+  | {
       type: "citations";
       sourceIds: string[];
+    };
+
+type AnswerBlock =
+  | {
+      type: "heading";
+      level: number;
+      content: string;
+    }
+  | {
+      type: "paragraph";
+      lines: string[];
+    }
+  | {
+      type: "unordered-list";
+      items: string[];
+    }
+  | {
+      type: "ordered-list";
+      items: string[];
+    }
+  | {
+      type: "blockquote";
+      lines: string[];
+    }
+  | {
+      type: "table";
+      headers: string[];
+      rows: string[][];
     };
 
 type ChatThreadProps = {
@@ -25,15 +61,18 @@ type ChatThreadProps = {
   hasChat: boolean;
   paperCount: number;
   messages: ChatMessage[];
+  selectedPapers: Paper[];
   selectedCitation: SelectedCitation;
   draft: string;
   loading: boolean;
   error: string | null;
+  validationMessage: string | null;
   disabled: boolean;
   onDraftChange: (value: string) => void;
   onSubmit: () => void;
   onCitationClick: (messageId: number, sourceId: string) => void;
   onQuickAction: (action: string) => void;
+  onRemoveSelectedPaper: (paperId: number) => void;
   onOpenCreateProject: () => void;
   onNewChat: () => void;
 };
@@ -63,6 +102,61 @@ function ActionButton({
   );
 }
 
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden="true">
+      <path
+        d="M5.5 5.5h5.25A1.25 1.25 0 0 1 12 6.75V12a1.25 1.25 0 0 1-1.25 1.25H5.5A1.25 1.25 0 0 1 4.25 12V6.75A1.25 1.25 0 0 1 5.5 5.5Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.3"
+      />
+      <path
+        d="M3.75 10.5h-.5A1.25 1.25 0 0 1 2 9.25V4a1.25 1.25 0 0 1 1.25-1.25H8.5A1.25 1.25 0 0 1 9.75 4v.5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.3"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden="true">
+      <path
+        d="M3.25 8.25 6.5 11.5l6.25-7"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.45"
+      />
+    </svg>
+  );
+}
+
+function CopyButton({
+  copied,
+  onClick,
+}: {
+  copied: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={copied ? "Copied" : "Copy message"}
+      title={copied ? "Copied" : "Copy message"}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+    </button>
+  );
+}
+
 function CitationButton({
   sourceId,
   active,
@@ -87,68 +181,238 @@ function CitationButton({
   );
 }
 
-function parseAnswerSegments(content: string): AnswerSegment[] {
-  const parts = content.split(new RegExp(`(${CITATION_GROUP_RE.source})`, "g"));
-  const segments: AnswerSegment[] = [];
-
-  for (let index = 0; index < parts.length; index += 1) {
-    const part = parts[index];
-    if (!part) {
-      continue;
-    }
-
-    const citationMatch = part.match(CITATION_TOKEN_RE);
-    if (citationMatch) {
-      const sourceIds = citationMatch[1].split(/\s*,\s*/);
-      const previousSegment = segments[segments.length - 1];
-      if (previousSegment?.type === "citations") {
-        previousSegment.sourceIds.push(...sourceIds);
-      } else {
-        segments.push({ type: "citations", sourceIds });
-      }
-      continue;
-    }
-
-    const previousIsCitation = CITATION_TOKEN_RE.test(parts[index - 1] || "");
-    const nextIsCitation = CITATION_TOKEN_RE.test(parts[index + 1] || "");
-    if (part.trim() === "" && previousIsCitation && nextIsCitation) {
-      continue;
-    }
-
-    const previousSegment = segments[segments.length - 1];
-    if (previousSegment?.type === "text") {
-      previousSegment.content += part;
-    } else {
-      segments.push({ type: "text", content: part });
-    }
+function parseInlineNodes(content: string, depth = 0): InlineNode[] {
+  if (!content) {
+    return [];
   }
 
-  return segments;
+  const nodes: InlineNode[] = [];
+  let cursor = 0;
+
+  for (const match of content.matchAll(INLINE_TOKEN_RE)) {
+    const token = match[0];
+    const index = match.index ?? 0;
+
+    if (index > cursor) {
+      nodes.push({ type: "text", content: content.slice(cursor, index) });
+    }
+
+    if (match[2]) {
+      nodes.push({
+        type: "bold",
+        children: depth >= 2 ? [{ type: "text", content: match[2] }] : parseInlineNodes(match[2], depth + 1),
+      });
+    } else if (match[3]) {
+      nodes.push({
+        type: "citations",
+        sourceIds: match[3].split(/\s*,\s*/),
+      });
+    } else if (token) {
+      nodes.push({ type: "text", content: token });
+    }
+
+    cursor = index + token.length;
+  }
+
+  if (cursor < content.length) {
+    nodes.push({ type: "text", content: content.slice(cursor) });
+  }
+
+  return nodes;
 }
 
-function renderAnswerWithCitations({
+function parseAnswerBlocks(content: string): AnswerBlock[] {
+  const lines = content.replace(/\r/g, "").split("\n");
+  const blocks: AnswerBlock[] = [];
+  let paragraphLines: string[] = [];
+
+  const splitTableRow = (line: string) =>
+    line
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((cell) => cell.trim());
+
+  const splitTabbedRow = (line: string) =>
+    line
+      .split("\t")
+      .map((cell) => cell.trim())
+      .filter((cell) => cell.length > 0);
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) {
+      return;
+    }
+    blocks.push({ type: "paragraph", lines: paragraphLines });
+    paragraphLines = [];
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushParagraph();
+      continue;
+    }
+
+    const headingMatch = trimmed.match(HEADING_RE);
+    if (headingMatch) {
+      flushParagraph();
+      blocks.push({
+        type: "heading",
+        level: headingMatch[1].length,
+        content: headingMatch[2],
+      });
+      continue;
+    }
+
+    if (
+      line.includes("|") &&
+      index + 1 < lines.length &&
+      TABLE_SEPARATOR_RE.test(lines[index + 1])
+    ) {
+      flushParagraph();
+      const headers = splitTableRow(line);
+      const rows: string[][] = [];
+      let cursor = index + 2;
+
+      while (cursor < lines.length) {
+        const rowLine = lines[cursor];
+        if (!rowLine.trim() || !rowLine.includes("|")) {
+          break;
+        }
+        rows.push(splitTableRow(rowLine));
+        cursor += 1;
+      }
+
+      blocks.push({ type: "table", headers, rows });
+      index = cursor - 1;
+      continue;
+    }
+
+    if (line.includes("\t")) {
+      const headers = splitTabbedRow(line);
+      if (headers.length >= 2) {
+        const rows: string[][] = [];
+        let cursor = index + 1;
+
+        while (cursor < lines.length) {
+          const rowLine = lines[cursor];
+          if (!rowLine.trim() || !rowLine.includes("\t")) {
+            break;
+          }
+          const cells = splitTabbedRow(rowLine);
+          if (cells.length < 2) {
+            break;
+          }
+          rows.push(cells);
+          cursor += 1;
+        }
+
+        if (rows.length > 0) {
+          flushParagraph();
+          blocks.push({ type: "table", headers, rows });
+          index = cursor - 1;
+          continue;
+        }
+      }
+    }
+
+    const blockquoteMatch = line.match(BLOCKQUOTE_RE);
+    if (blockquoteMatch) {
+      flushParagraph();
+      const quoteLines: string[] = [];
+      let cursor = index;
+      while (cursor < lines.length) {
+        const quoteLine = lines[cursor].match(BLOCKQUOTE_RE);
+        if (!quoteLine) {
+          break;
+        }
+        quoteLines.push(quoteLine[1]);
+        cursor += 1;
+      }
+      blocks.push({ type: "blockquote", lines: quoteLines });
+      index = cursor - 1;
+      continue;
+    }
+
+    const unorderedMatch = line.match(UNORDERED_LIST_RE);
+    if (unorderedMatch) {
+      flushParagraph();
+      const items: string[] = [];
+      let cursor = index;
+      while (cursor < lines.length) {
+        const listMatch = lines[cursor].match(UNORDERED_LIST_RE);
+        if (!listMatch) {
+          break;
+        }
+        items.push(listMatch[1]);
+        cursor += 1;
+      }
+      blocks.push({ type: "unordered-list", items });
+      index = cursor - 1;
+      continue;
+    }
+
+    const orderedMatch = line.match(ORDERED_LIST_RE);
+    if (orderedMatch) {
+      flushParagraph();
+      const items: string[] = [];
+      let cursor = index;
+      while (cursor < lines.length) {
+        const listMatch = lines[cursor].match(ORDERED_LIST_RE);
+        if (!listMatch) {
+          break;
+        }
+        items.push(listMatch[1]);
+        cursor += 1;
+      }
+      blocks.push({ type: "ordered-list", items });
+      index = cursor - 1;
+      continue;
+    }
+
+    paragraphLines.push(trimmed);
+  }
+
+  flushParagraph();
+  return blocks;
+}
+
+function renderInlineNodes({
+  nodes,
   message,
   selectedCitation,
   onCitationClick,
 }: {
+  nodes: InlineNode[];
   message: ChatMessage;
   selectedCitation: SelectedCitation;
   onCitationClick: (messageId: number, sourceId: string) => void;
 }) {
-  const segments = parseAnswerSegments(message.content);
+  return nodes.map((node, index) => {
+    if (node.type === "text") {
+      return <Fragment key={`${message.id}-text-${index}`}>{node.content}</Fragment>;
+    }
 
-  return segments.map((segment, index) => {
-    if (segment.type === "text") {
+    if (node.type === "bold") {
       return (
-        <span key={`${message.id}-text-${index}-${segment.content.slice(0, 12)}`}>
-          {segment.content}
-        </span>
+        <strong key={`${message.id}-bold-${index}`} className="font-semibold text-slate-950">
+          {renderInlineNodes({
+            nodes: node.children,
+            message,
+            selectedCitation,
+            onCitationClick,
+          })}
+        </strong>
       );
     }
 
     return (
       <span key={`${message.id}-group-${index}`} className="inline-flex flex-wrap items-center gap-1 align-middle">
-        {segment.sourceIds.map((sourceId) => (
+        {node.sourceIds.map((sourceId) => (
           <CitationButton
             key={`${message.id}-${sourceId}-${index}`}
             sourceId={sourceId}
@@ -159,6 +423,204 @@ function renderAnswerWithCitations({
       </span>
     );
   });
+}
+
+function renderStructuredAnswer({
+  message,
+  selectedCitation,
+  onCitationClick,
+}: {
+  message: ChatMessage;
+  selectedCitation: SelectedCitation;
+  onCitationClick: (messageId: number, sourceId: string) => void;
+}) {
+  const blocks = parseAnswerBlocks(message.content);
+
+  const renderLine = (content: string, key: string) =>
+    renderInlineNodes({
+      nodes: parseInlineNodes(content),
+      message,
+      selectedCitation,
+      onCitationClick,
+    }).map((node, index) => <Fragment key={`${key}-${index}`}>{node}</Fragment>);
+
+  return (
+    <div className="space-y-4 text-[15px] leading-7 text-slate-900">
+      {blocks.map((block, blockIndex) => {
+        if (block.type === "heading") {
+          const className =
+            block.level <= 2
+              ? "text-xl font-semibold text-slate-950"
+              : block.level === 3
+                ? "text-lg font-semibold text-slate-950"
+                : "text-base font-semibold text-slate-900";
+          return (
+            <div key={`${message.id}-heading-${blockIndex}`} className={className}>
+              {renderLine(block.content, `${message.id}-heading-${blockIndex}`)}
+            </div>
+          );
+        }
+
+        if (block.type === "paragraph") {
+          return (
+            <p key={`${message.id}-paragraph-${blockIndex}`}>
+              {block.lines.map((line, lineIndex) => (
+                <Fragment key={`${message.id}-paragraph-${blockIndex}-${lineIndex}`}>
+                  {renderLine(line, `${message.id}-paragraph-${blockIndex}-${lineIndex}`)}
+                  {lineIndex < block.lines.length - 1 ? <br /> : null}
+                </Fragment>
+              ))}
+            </p>
+          );
+        }
+
+        if (block.type === "unordered-list") {
+          return (
+            <ul key={`${message.id}-ul-${blockIndex}`} className="list-disc space-y-2 pl-5 marker:text-slate-400">
+              {block.items.map((item, itemIndex) => (
+                <li key={`${message.id}-ul-${blockIndex}-${itemIndex}`}>
+                  {renderLine(item, `${message.id}-ul-${blockIndex}-${itemIndex}`)}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+
+        if (block.type === "ordered-list") {
+          return (
+            <ol key={`${message.id}-ol-${blockIndex}`} className="list-decimal space-y-2 pl-5 marker:text-slate-400">
+              {block.items.map((item, itemIndex) => (
+                <li key={`${message.id}-ol-${blockIndex}-${itemIndex}`}>
+                  {renderLine(item, `${message.id}-ol-${blockIndex}-${itemIndex}`)}
+                </li>
+              ))}
+            </ol>
+          );
+        }
+
+        if (block.type === "table") {
+          return (
+            <div key={`${message.id}-table-${blockIndex}`} className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="min-w-full border-collapse bg-white text-sm leading-6">
+                <thead className="bg-slate-50">
+                  <tr>
+                    {block.headers.map((header, headerIndex) => (
+                      <th
+                        key={`${message.id}-table-${blockIndex}-header-${headerIndex}`}
+                        className="border-b border-slate-200 px-4 py-2 text-left font-semibold text-slate-900"
+                      >
+                        {renderLine(
+                          header,
+                          `${message.id}-table-${blockIndex}-header-${headerIndex}`,
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {block.rows.map((row, rowIndex) => (
+                    <tr key={`${message.id}-table-${blockIndex}-row-${rowIndex}`} className="border-t border-slate-100">
+                      {row.map((cell, cellIndex) => (
+                        <td
+                          key={`${message.id}-table-${blockIndex}-cell-${rowIndex}-${cellIndex}`}
+                          className="px-4 py-2 align-top text-slate-700"
+                        >
+                          {renderLine(
+                            cell,
+                            `${message.id}-table-${blockIndex}-cell-${rowIndex}-${cellIndex}`,
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+
+        return (
+          <blockquote
+            key={`${message.id}-quote-${blockIndex}`}
+            className="border-l-2 border-slate-200 pl-4 text-slate-700"
+          >
+            {block.lines.map((line, lineIndex) => (
+              <Fragment key={`${message.id}-quote-${blockIndex}-${lineIndex}`}>
+                {renderLine(line, `${message.id}-quote-${blockIndex}-${lineIndex}`)}
+                {lineIndex < block.lines.length - 1 ? <br /> : null}
+              </Fragment>
+            ))}
+          </blockquote>
+        );
+      })}
+    </div>
+  );
+}
+
+function getInputPlaceholder() {
+  return "Ask about one paper, selected papers, all papers, or a claim from this project...";
+}
+
+function getPaperChipLabel(paper: Paper) {
+  return paper.title || paper.original_filename;
+}
+
+function RemoveChipIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" aria-hidden="true">
+      <path
+        d="m4.5 4.5 7 7m0-7-7 7"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.35"
+      />
+    </svg>
+  );
+}
+
+function SelectedPaperChips({
+  papers,
+  onRemove,
+}: {
+  papers: Paper[];
+  onRemove: (paperId: number) => void;
+}) {
+  if (papers.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="px-5 pt-3">
+      <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            Selected Papers
+          </span>
+          {papers.map((paper) => (
+            <span
+              key={paper.id}
+              className="inline-flex max-w-full items-center gap-2 rounded-full bg-[var(--brand-blue-soft)] px-3 py-1.5 text-xs font-medium text-[var(--brand-ink-soft)]"
+            >
+              <span className="truncate">{getPaperChipLabel(paper)}</span>
+              <button
+                type="button"
+                onClick={() => onRemove(paper.id)}
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[var(--brand-ink-soft)]/80 transition hover:bg-white/60 hover:text-[var(--brand-ink-soft)]"
+                aria-label={`Remove ${getPaperChipLabel(paper)} from selected papers`}
+              >
+                <RemoveChipIcon />
+              </button>
+            </span>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Selected papers define the default scope for the next question unless you name a paper or
+          use a visible paper number in the message.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function NoProjectState({ onOpenCreateProject }: { onOpenCreateProject: () => void }) {
@@ -225,11 +687,22 @@ function EmptyThread({
   );
 }
 
-function UserMessage({ message }: { message: ChatMessage }) {
+function UserMessage({
+  message,
+  copied,
+  onCopy,
+}: {
+  message: ChatMessage;
+  copied: boolean;
+  onCopy: () => void;
+}) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[72%] rounded-2xl rounded-br-md bg-[var(--brand-blue-soft)] px-5 py-4 text-[15px] leading-7 text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        {message.content}
+      <div className="group flex max-w-[72%] flex-col items-end gap-2">
+        <div className="rounded-2xl rounded-br-md bg-[var(--brand-blue-soft)] px-5 py-4 text-[15px] leading-7 text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+          <span className="whitespace-pre-wrap">{message.content}</span>
+        </div>
+        <CopyButton copied={copied} onClick={onCopy} />
       </div>
     </div>
   );
@@ -239,35 +712,33 @@ function AssistantMessage({
   message,
   selectedCitation,
   onCitationClick,
+  copied,
+  onCopy,
 }: {
   message: ChatMessage;
   selectedCitation: SelectedCitation;
   onCitationClick: (messageId: number, sourceId: string) => void;
+  copied: boolean;
+  onCopy: () => void;
 }) {
   return (
-    <article className="max-w-[860px] rounded-2xl rounded-tl-md border border-slate-200/90 bg-white px-6 py-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
-      <div className="mb-3 flex items-center gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--brand-teal-soft)] text-sm font-semibold text-[var(--brand-ink)]">
-          L
+    <div className="group flex max-w-[860px] flex-col gap-2">
+      <article className="rounded-2xl rounded-tl-md border border-slate-200/90 bg-white px-6 py-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
+        <div className="mb-3 flex items-center gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--brand-teal-soft)] text-sm font-semibold text-[var(--brand-ink)]">
+            L
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-950">LitSpace</p>
+            <p className="text-xs text-slate-500">
+              {message.sources.length > 0 ? `${message.sources.length} cited sources` : "Answer"}
+            </p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-950">LitSpace</p>
-          <p className="text-xs text-slate-500">
-            {message.sources.length > 0 ? `${message.sources.length} cited sources` : "Answer"}
-          </p>
-        </div>
-      </div>
-
-      <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-900">
-        {renderAnswerWithCitations({ message, selectedCitation, onCitationClick })}
-      </div>
-
-      {message.insufficient_evidence ? (
-        <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-5 text-amber-800">
-          The backend marked this answer as having limited supporting evidence.
-        </p>
-      ) : null}
-    </article>
+        {renderStructuredAnswer({ message, selectedCitation, onCitationClick })}
+      </article>
+      <CopyButton copied={copied} onClick={onCopy} />
+    </div>
   );
 }
 
@@ -285,23 +756,39 @@ export function ChatThread({
   hasChat,
   paperCount,
   messages,
+  selectedPapers,
   selectedCitation,
   draft,
   loading,
   error,
+  validationMessage,
   disabled,
   onDraftChange,
   onSubmit,
   onCitationClick,
   onQuickAction,
+  onRemoveSelectedPaper,
   onOpenCreateProject,
   onNewChat,
 }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length, loading]);
+
+  async function copyMessage(message: ChatMessage) {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedMessageId(message.id);
+      window.setTimeout(() => {
+        setCopiedMessageId((current) => (current === message.id ? null : current));
+      }, 1600);
+    } catch {
+      setCopiedMessageId(null);
+    }
+  }
 
   return (
     <main className="flex min-w-[520px] flex-1 flex-col bg-[var(--surface-muted)]">
@@ -318,13 +805,20 @@ export function ChatThread({
               <div className="mx-auto flex max-w-[920px] flex-col gap-6">
                 {messages.map((message) =>
                   message.role === "user" ? (
-                    <UserMessage key={message.id} message={message} />
+                    <UserMessage
+                      key={message.id}
+                      message={message}
+                      copied={copiedMessageId === message.id}
+                      onCopy={() => void copyMessage(message)}
+                    />
                   ) : (
                     <AssistantMessage
                       key={message.id}
                       message={message}
                       selectedCitation={selectedCitation}
                       onCitationClick={onCitationClick}
+                      copied={copiedMessageId === message.id}
+                      onCopy={() => void copyMessage(message)}
                     />
                   ),
                 )}
@@ -339,10 +833,18 @@ export function ChatThread({
             )}
           </div>
 
-          <div className="border-t border-slate-200 bg-white/95 px-4 py-4 backdrop-blur">
-            <div className="mx-auto max-w-[920px] rounded-2xl border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.06)]">
+          <div className="px-4 py-4">
+            <div className="mx-auto max-w-[920px]">
               <QuickActionsBar disabled={disabled} onActionSelect={onQuickAction} />
-              <ChatInputBar value={draft} disabled={disabled || loading} onChange={onDraftChange} onSubmit={onSubmit} />
+              <SelectedPaperChips papers={selectedPapers} onRemove={onRemoveSelectedPaper} />
+              <ChatInputBar
+                value={draft}
+                placeholder={getInputPlaceholder()}
+                disabled={disabled || loading}
+                validationMessage={validationMessage}
+                onChange={onDraftChange}
+                onSubmit={onSubmit}
+              />
             </div>
           </div>
         </>

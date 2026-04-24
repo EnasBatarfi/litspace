@@ -11,16 +11,19 @@ def hybrid_retrieve(
     project_slug: str,
     query: str,
     top_k: int,
+    paper_ids: list[int] | None = None,
 ) -> list[dict]:
     semantic_hits = semantic_retrieve(
         project_slug=project_slug,
         query=query,
         top_k=max(top_k, 10),
+        paper_ids=paper_ids,
     )
     lexical_hits = lexical_retrieve(
         project_slug=project_slug,
         query=query,
         top_k=max(top_k, 10),
+        paper_ids=paper_ids,
     )
     merged_hits = reciprocal_rank_fusion(
         semantic_hits=semantic_hits,

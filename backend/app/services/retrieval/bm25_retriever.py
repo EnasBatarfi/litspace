@@ -15,6 +15,7 @@ def lexical_retrieve(
     project_slug: str,
     query: str,
     top_k: int = 10,
+    paper_ids: list[int] | None = None,
 ) -> list[dict]:
     bm25_path = get_project_bm25_path(project_slug)
     if not bm25_path.exists():
@@ -23,6 +24,12 @@ def lexical_retrieve(
     payload = json.loads(Path(bm25_path).read_text(encoding="utf-8"))
 
     entries = payload["entries"]
+    if paper_ids:
+        allowed_ids = {int(paper_id) for paper_id in paper_ids}
+        entries = [entry for entry in entries if int(entry["paper_id"]) in allowed_ids]
+    if not entries:
+        return []
+
     tokenized_corpus = [entry["tokens"] for entry in entries]
 
     bm25 = BM25Okapi(tokenized_corpus)

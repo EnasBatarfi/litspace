@@ -22,6 +22,24 @@ LitSpace is a grounded multi-paper research workspace for academic PDFs.
 - Evidence lookup
 - Strong grounding and citations
 
+## Recent Improvements
+
+- Added lightweight clarification continuation so short follow-ups like `first`, `third`, `1`, `paper 2`, and `first and second` reuse the prior summarize or compare intent instead of forcing the user to restate the full request.
+- Added natural selected-paper defaults:
+  - one selected paper can drive `summarize`, `explain`, or similar singular follow-ups
+  - multiple selected papers can drive `compare`, `summarize the papers`, and similar plural follow-ups
+- Improved comparison resolution so prompts like `compare`, `compare them`, `compare first and second`, and `compare with <paper>` compose selected scope, explicit paper mentions, and recent clarified scope more naturally.
+- Summary and comparison requests now prefer clarification or partial grounded answers instead of failing early with blanket insufficient-evidence responses.
+- Evidence requests remain stricter than summary and compare flows, but now report partial support when only some papers or claims are backed by retrieved evidence.
+- Added project-bounded discovery behavior for prompts like `which paper mentions X` and `search ... in all papers`, instead of treating them like open-domain chat or generic help openings.
+- Added lightweight continuation for assistant-offered follow-ups such as `yes`, `yes do it`, and `do it`, so quote-pull and similar multi-turn actions continue naturally.
+- Reduced repetitive low-value unsupported addenda so supported answers read more cleanly.
+- Simplified the papers rail UI:
+  - left-side checkbox for selection
+  - simpler header copy
+  - lighter card styling with less visual noise
+  - papers remain shared across chats within the same project
+
 ## Project Progress
 
 ### Phase 1. Persistent Project And Paper Foundation
@@ -343,7 +361,7 @@ Current validation:
 
 Known limitations:
 
-- This is grounded QA only; summary, compare, and richer answer modes are not implemented yet.
+- Summary, compare, explain, discovery, and evidence requests are all routed through the same grounded `/ask` flow rather than separate dedicated APIs.
 - Answer quality depends on retrieval quality. If retrieval selects the wrong paper, generation can still answer from the wrong evidence.
 - Typo-heavy metadata queries, such as misspelled paper names or author lookups, are weak because retrieval is optimized for chunked content QA rather than normalized metadata search.
 - Broad ambiguous terms like "threat model" may retrieve the wrong paper when multiple papers use similar language.
@@ -477,7 +495,7 @@ Current workspace behavior after these changes:
 Known limitations after this phase:
 
 - Chat persistence uses new `chats` and `messages` tables, so existing deployments need the backend to restart and create those tables before the full workspace flow is available.
-- `summary`, `compare`, and other quick actions are still UI helpers over the same ask flow, not separate specialized backend answer modes.
+- `summary`, `compare`, and other quick actions still share the same backend ask pipeline rather than using separate dedicated endpoints.
 - There is still no authenticated multi-user model; all projects remain local single-user workspace data.
 
 ## Local development

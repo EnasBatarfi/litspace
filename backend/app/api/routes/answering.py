@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.chat import Chat
 from app.models.message import Message
+from app.models.paper import Paper
 from app.models.project import Project
 from app.schemas.answering import AskRequest, AskResponse, AnswerSource
 from app.services.answering.answerer import ask_project
@@ -53,6 +54,11 @@ def ask_project_question(
             )
 
     try:
+        project_papers = db.scalars(
+            select(Paper)
+            .where(Paper.project_id == project.id)
+        ).all()
+
         result = ask_project(
             project_id=project.id,
             project_slug=project.slug,
@@ -60,6 +66,10 @@ def ask_project_question(
             top_k=request.top_k or settings.default_answer_top_k,
             temperature=request.temperature,
             max_output_tokens=request.max_output_tokens,
+            project_papers=project_papers,
+            recent_messages=chat.messages if chat is not None else [],
+            selected_paper_ids=request.selected_paper_ids,
+            paper_order_ids=request.paper_order_ids,
         )
     except Exception as exc:
         raise HTTPException(
