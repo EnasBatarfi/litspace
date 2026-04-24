@@ -30,7 +30,6 @@ data/indexes/*
 # Evaluation
 evaluation/.env
 evaluation/.evalenv/
-evaluation/outputs/
 
 # SQLite
 *.db
