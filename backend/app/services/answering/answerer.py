@@ -39,6 +39,7 @@ INSUFFICIENT_EVIDENCE_TEXT = "Insufficient evidence in the retrieved project sou
 SELECTED_SCOPE_INSUFFICIENT_TEXT = (
     "I couldn't find enough evidence in the selected papers to answer confidently."
 )
+OUT_OF_SCOPE_REFUSAL_TEXT = "I can't answer that from the uploaded project papers."
 
 SOURCE_GROUP_RE = re.compile(r"\[((?:S\d+(?:\s*,\s*S\d+)*))\]")
 SOURCE_TAG_RE = re.compile(r"\[S(\d+)\]")
@@ -53,6 +54,48 @@ PLURAL_PAPER_REFERENCE_PHRASES = (" selected papers ", " these papers ", " those
 SINGULAR_PRONOUN_REFERENCE_PHRASES = (" its ", " it ")
 PLURAL_PRONOUN_REFERENCE_PHRASES = (" their ", " they ", " them ")
 TASK_INTENT_WORDS = ("summarize", "compare", "evidence", "claim", "explain")
+PROJECT_SCOPE_CUE_WORDS = (
+    "paper",
+    "papers",
+    "project",
+    "projects",
+    "source",
+    "sources",
+    "uploaded",
+    "selected",
+    "study",
+    "studies",
+)
+PAPER_ANALYSIS_WORDS = {
+    "abstract",
+    "claim",
+    "claims",
+    "compare",
+    "comparison",
+    "contribution",
+    "contributions",
+    "evaluate",
+    "evaluation",
+    "evidence",
+    "explain",
+    "finding",
+    "findings",
+    "goal",
+    "limitation",
+    "limitations",
+    "method",
+    "methods",
+    "paper",
+    "papers",
+    "project",
+    "result",
+    "results",
+    "scope",
+    "source",
+    "sources",
+    "summarize",
+    "summary",
+}
 QUOTE_INTENT_PHRASES = (
     "exact sentence",
     "exact quote",
@@ -288,6 +331,7 @@ class ScopeResolution:
     request_type: str
     reference_kind: str | None = None
     assistant_response: str | None = None
+    assistant_action: str | None = None
     clarification_text: str | None = None
 
 
@@ -429,6 +473,10 @@ def _paper_aliases(paper: Paper) -> tuple[str, ...]:
                 prefix = " ".join(meaningful_tokens[:size]).strip()
                 if prefix and len(prefix) >= 3:
                     aliases.add(prefix)
+            if 2 <= len(meaningful_tokens) <= 8:
+                acronym = "".join(token[0] for token in meaningful_tokens)
+                if len(acronym) >= 3:
+                    aliases.add(acronym)
 
         for match in re.findall(r"\(([^)]+)\)", raw):
             normalized_match = _normalize_text(match)
@@ -557,6 +605,22 @@ def _looks_like_cross_paper_discovery_query(query: str, request_type: str) -> bo
         return True
 
     return bool(tokens & DISCOVERY_SCOPE_TOKENS)
+
+
+def _looks_like_identification_query(query: str, request_type: str) -> bool:
+    if request_type != "question":
+        return False
+
+    normalized = _normalize_text(query)
+    if not (
+        normalized.startswith("which paper ")
+        or normalized.startswith("which papers ")
+        or normalized.startswith("among the selected papers which ")
+        or normalized.startswith("among selected papers which ")
+    ):
+        return False
+
+    return bool(_query_topic_fragment(query))
 
 
 def _query_topic_fragment(query: str) -> str:
@@ -934,6 +998,8 @@ def _selected_reference_kind(query: str) -> str | None:
 
 def _reference_kind(query: str, request_type: str) -> str | None:
     normalized = f" {_normalize_text(query)} "
+    if _looks_like_identification_query(query, request_type):
+        return None
     if any(phrase in normalized for phrase in PLURAL_PAPER_REFERENCE_PHRASES):
         return "paper_plural"
     if any(phrase in normalized for phrase in SINGULAR_PAPER_REFERENCE_PHRASES):
@@ -985,6 +1051,33 @@ def _paper_target_clarification_text(
     if reference_kind in {"paper_plural", "pronoun_plural"}:
         return PAPERS_CLARIFICATION_TEXT
     return PAPER_CLARIFICATION_TEXT
+
+
+def _has_recent_referent(recent_targets: RecentTargets) -> bool:
+    return bool(recent_targets.single_ids or recent_targets.multi_ids)
+
+
+def _has_project_scope_cue(query: str) -> bool:
+    normalized = _normalize_text(query)
+    if any(f" {word} " in f" {normalized} " for word in PROJECT_SCOPE_CUE_WORDS):
+        return True
+    if _is_explicit_all(query):
+        return True
+    return bool(_tokenize(normalized) & PAPER_ANALYSIS_WORDS)
+
+
+def _looks_like_out_of_scope_query(
+    *,
+    query: str,
+    explicit_targets: Sequence[int],
+    selected_ids: Sequence[int],
+    recent_targets: RecentTargets,
+) -> bool:
+    if explicit_targets or selected_ids or _has_recent_referent(recent_targets):
+        return False
+    if _has_project_scope_cue(query):
+        return False
+    return True
 
 
 def _resolve_compare_scope(
@@ -1203,6 +1296,7 @@ def _resolve_scope(
             retrieval_query=resolved_query,
             request_type=request_type,
             reference_kind=reference_kind,
+            assistant_action="clarify",
             clarification_text=text,
         )
 
@@ -1229,6 +1323,7 @@ def _resolve_scope(
             request_type=request_type,
             reference_kind=reference_kind,
             assistant_response=_help_response_for(query),
+            assistant_action="answer",
         )
 
     if _looks_like_cross_paper_discovery_query(resolved_query, request_type):
@@ -1239,6 +1334,25 @@ def _resolve_scope(
         if selected_ids:
             return scoped_resolution(selected_ids, scope_source="selected_scope")
         return project_scope_resolution()
+
+    if _looks_like_out_of_scope_query(
+        query=resolved_query,
+        explicit_targets=explicit_targets,
+        selected_ids=selected_ids,
+        recent_targets=recent_targets,
+    ):
+        return ScopeResolution(
+            paper_ids=None,
+            target_labels=[],
+            scope_source="out_of_scope",
+            recent_history=recent_history,
+            resolved_query=resolved_query,
+            retrieval_query=resolved_query,
+            request_type=request_type,
+            reference_kind=reference_kind,
+            assistant_response=OUT_OF_SCOPE_REFUSAL_TEXT,
+            assistant_action="refuse",
+        )
 
     if explicit_targets:
         if request_type == "compare":
@@ -1288,6 +1402,11 @@ def _resolve_scope(
                 known_compare_target_count=len(compare_targets),
             )
         )
+
+    if _looks_like_identification_query(resolved_query, request_type):
+        if selected_ids:
+            return scoped_resolution(selected_ids, scope_source="selected_scope")
+        return project_scope_resolution()
 
     if reference_kind == "paper_singular":
         if selected_ids:
@@ -1540,6 +1659,7 @@ def ask_project(
             "project_slug": project_slug,
             "query": query,
             "answer": scope.assistant_response,
+            "action": scope.assistant_action or "answer",
             "insufficient_evidence": False,
             "retrieval_hits_count": 0,
             "used_sources": [],
@@ -1551,6 +1671,7 @@ def ask_project(
             "project_slug": project_slug,
             "query": query,
             "answer": scope.clarification_text,
+            "action": "clarify",
             "insufficient_evidence": False,
             "retrieval_hits_count": 0,
             "used_sources": [],
@@ -1575,6 +1696,7 @@ def ask_project(
             "project_slug": project_slug,
             "query": query,
             "answer": _insufficient_text(scope.scope_source, scope.paper_ids),
+            "action": "refuse",
             "insufficient_evidence": True,
             "retrieval_hits_count": 0,
             "used_sources": [],
@@ -1586,6 +1708,7 @@ def ask_project(
             "project_slug": project_slug,
             "query": query,
             "answer": _insufficient_text(scope.scope_source, scope.paper_ids),
+            "action": "refuse",
             "insufficient_evidence": True,
             "retrieval_hits_count": len(hits),
             "used_sources": [],
@@ -1627,6 +1750,7 @@ def ask_project(
             "project_slug": project_slug,
             "query": query,
             "answer": _insufficient_text(scope.scope_source, scope.paper_ids),
+            "action": "refuse",
             "insufficient_evidence": True,
             "retrieval_hits_count": len(hits),
             "used_sources": [],
@@ -1660,6 +1784,7 @@ def ask_project(
         "project_slug": project_slug,
         "query": query,
         "answer": answer,
+        "action": "answer",
         "insufficient_evidence": False,
         "retrieval_hits_count": len(hits),
         "used_sources": used_sources,

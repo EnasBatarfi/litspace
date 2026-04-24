@@ -1,5 +1,7 @@
 # This file defines the Pydantic models for the request and response of the answering API endpoint.
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -36,12 +38,29 @@ class AnswerSource(BaseModel):
     excerpt: str
 
 
+class AnswerTiming(BaseModel):
+    retrieval_latency_sec: float | None = None
+    generation_latency_sec: float | None = None
+    total_latency_sec: float | None = None
+
+
+class AnswerUsage(BaseModel):
+    llm_provider: str | None = None
+    llm_model: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+
+
 class AskResponse(BaseModel):
     project_id: int
     project_slug: str
     chat_id: int | None = None
     query: str
     answer: str
+    action: Literal["answer", "clarify", "refuse"] | None = None
     insufficient_evidence: bool
     retrieval_hits_count: int
     used_sources: list[AnswerSource]
+    timing: AnswerTiming | None = None
+    usage: AnswerUsage | None = None

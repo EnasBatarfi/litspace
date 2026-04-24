@@ -1,0 +1,44 @@
+{
+  "Progent": {
+    "goal": "Controls unsafe LLM-agent tool use through programmable privilege control.",
+    "method": "Defines runtime policies over tool calls and arguments using a structured policy language enforced deterministically.",
+    "key_contribution": "Applies least-privilege style control to agent tool usage at runtime.",
+    "main_limitation": "Still depends on policy coverage and correct policy specification."
+  },
+  "MCP-Secure": {
+    "goal": "Improves safety of MCP-based tool access for LLM systems.",
+    "method": "Uses scoped access, read-only defaults, and approval-gated privilege elevation for tool interactions.",
+    "key_contribution": "Adds host-side control over tool permissions and session behavior.",
+    "main_limitation": "May trade off convenience and flexibility for stronger control."
+  },
+  "AgentSpec": {
+    "goal": "Constrains unsafe agent behavior through runtime rules.",
+    "method": "Uses a lightweight rule language with triggers, predicates, and enforcement actions.",
+    "key_contribution": "Makes runtime safety rules explicit and enforceable during agent execution.",
+    "main_limitation": "Runtime checks may not fully capture long-horizon or future-state consequences."
+  },
+  "Conseca": {
+    "goal": "Generates context-sensitive security policies for agents.",
+    "method": "Builds just-in-time contextual policies from trusted context and enforces them deterministically.",
+    "key_contribution": "Adapts policies to the current task context rather than using one fixed rule set.",
+    "main_limitation": "Policy quality depends on the trusted context and policy-generation process."
+  },
+  "AgentGuardian": {
+    "goal": "Learns security controls for agent workflows from benign traces.",
+    "method": "Uses staging-phase traces to derive policies and govern runtime workflow behavior.",
+    "key_contribution": "Combines learned controls with workflow-level runtime governance.",
+    "main_limitation": "Coverage depends on how representative the benign traces are."
+  },
+  "AgentArmor": {
+    "goal": "Analyzes agent execution traces to detect unsafe behavior.",
+    "method": "Treats runtime traces as structured programs and inspects dependence relationships for security violations.",
+    "key_contribution": "Provides graph-based runtime analysis of agent behavior.",
+    "main_limitation": "Its effectiveness depends on trace representation and analysis coverage."
+  },
+  "ACE": {
+    "goal": "Secures LLM-integrated app systems by separating planning and execution.",
+    "method": "Uses abstract planning, concrete planning, isolated execution, and static information-flow controls.",
+    "key_contribution": "Places strong security boundaries around application execution and information flow.",
+    "main_limitation": "Its guarantees depend on the architecture and accuracy of boundary enforcement."
+  }
+}

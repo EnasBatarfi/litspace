@@ -3,11 +3,22 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import httpx
 from google import genai
 
 from app.core.config import settings
+
+
+@dataclass
+class LLMGenerationResult:
+    text: str
+    provider: str
+    model: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
 
 
 def _provider_chain() -> list[str]:
@@ -94,7 +105,7 @@ def _generate_with_gemini(
     user_prompt: str,
     temperature: float,
     max_output_tokens: int,
-) -> str:
+) -> LLMGenerationResult:
     if not settings.gemini_api_key:
         raise ValueError("GEMINI_API_KEY is not set")
 
@@ -114,7 +125,15 @@ def _generate_with_gemini(
     if not content:
         raise ValueError("Gemini returned an empty response")
 
-    return content
+    usage = getattr(response, "usage_metadata", None)
+    return LLMGenerationResult(
+        text=content,
+        provider="gemini",
+        model=settings.gemini_model,
+        input_tokens=getattr(usage, "prompt_token_count", None) if usage is not None else None,
+        output_tokens=getattr(usage, "candidates_token_count", None) if usage is not None else None,
+        total_tokens=getattr(usage, "total_token_count", None) if usage is not None else None,
+    )
 
 
 def _generate_with_openai(
@@ -122,7 +141,7 @@ def _generate_with_openai(
     user_prompt: str,
     temperature: float,
     max_output_tokens: int,
-) -> str:
+) -> LLMGenerationResult:
     if not settings.openai_api_key:
         raise ValueError("OPENAI_API_KEY is not set")
 
@@ -162,16 +181,32 @@ def _generate_with_openai(
 
     data = send_request(max_output_tokens)
     content = extract_text(data)
+    usage = data.get("usage") or {}
     if content:
-        return content
+        return LLMGenerationResult(
+            text=content,
+            provider="openai",
+            model=settings.openai_model,
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            total_tokens=usage.get("total_tokens"),
+        )
 
     incomplete_reason = (data.get("incomplete_details") or {}).get("reason")
     if incomplete_reason == "max_output_tokens":
         retry_budget = max(1200, max_output_tokens * 2)
         data = send_request(retry_budget)
         content = extract_text(data)
+        usage = data.get("usage") or {}
         if content:
-            return content
+            return LLMGenerationResult(
+                text=content,
+                provider="openai",
+                model=settings.openai_model,
+                input_tokens=usage.get("input_tokens"),
+                output_tokens=usage.get("output_tokens"),
+                total_tokens=usage.get("total_tokens"),
+            )
 
     raise ValueError(f"OpenAI returned an empty response: {data}")
 
@@ -181,7 +216,7 @@ def _generate_with_anthropic(
     user_prompt: str,
     temperature: float,
     max_output_tokens: int,
-) -> str:
+) -> LLMGenerationResult:
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY is not set")
 
@@ -220,7 +255,21 @@ def _generate_with_anthropic(
     if not content:
         raise ValueError("Anthropic returned an empty response")
 
-    return content
+    usage = data.get("usage") or {}
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+    total_tokens = None
+    if input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+
+    return LLMGenerationResult(
+        text=content,
+        provider="anthropic",
+        model=settings.anthropic_model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+    )
 
 
 def _generate_with_ollama(
@@ -228,7 +277,7 @@ def _generate_with_ollama(
     user_prompt: str,
     temperature: float,
     max_output_tokens: int,
-) -> str:
+) -> LLMGenerationResult:
     payload = {
         "model": settings.ollama_model,
         "stream": False,
@@ -255,16 +304,29 @@ def _generate_with_ollama(
     if not content:
         raise ValueError("Ollama returned an empty response")
 
-    return content
+    input_tokens = data.get("prompt_eval_count")
+    output_tokens = data.get("eval_count")
+    total_tokens = None
+    if input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+
+    return LLMGenerationResult(
+        text=content,
+        provider="ollama",
+        model=settings.ollama_model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+    )
 
 
-def generate_answer_text(
+def generate_answer(
     system_prompt: str,
     user_prompt: str,
     temperature: float,
     max_output_tokens: int,
-) -> str:
-    generators: dict[str, Callable[[str, str, float, int], str]] = {
+) -> LLMGenerationResult:
+    generators: dict[str, Callable[[str, str, float, int], LLMGenerationResult]] = {
         "gemini": _generate_with_gemini,
         "openai": _generate_with_openai,
         "anthropic": _generate_with_anthropic,
@@ -280,16 +342,30 @@ def generate_answer_text(
             continue
 
         try:
-            content = generator(
+            result = generator(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
             )
             _print_provider_status(provider, "selected")
-            return content
+            return result
         except Exception as exc:
             _print_provider_status(provider, f"failed: {exc}")
             failures.append(f"{provider}: {exc}")
 
     raise RuntimeError("All configured LLM providers failed: " + " | ".join(failures))
+
+
+def generate_answer_text(
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+    max_output_tokens: int,
+) -> str:
+    return generate_answer(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=temperature,
+        max_output_tokens=max_output_tokens,
+    ).text

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     eval_dir: str = "../data/eval"
     sqlite_path: str = "../data/litspace.db"
 
-    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_model: str = "BAAI/bge-base-en-v1.5"
 
     llm_provider: str = "openai"
     llm_fallback_enabled: bool = True

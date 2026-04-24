@@ -14,7 +14,7 @@ from app.models.chat import Chat
 from app.models.message import Message
 from app.models.paper import Paper
 from app.models.project import Project
-from app.schemas.answering import AskRequest, AskResponse, AnswerSource
+from app.schemas.answering import AskRequest, AskResponse, AnswerSource, AnswerTiming, AnswerUsage
 from app.services.answering.answerer import ask_project
 
 router = APIRouter(prefix="/projects", tags=["answering"])
@@ -114,7 +114,10 @@ def ask_project_question(
         chat_id=chat.id if chat is not None else None,
         query=result["query"],
         answer=result["answer"],
+        action=result.get("action"),
         insufficient_evidence=result["insufficient_evidence"],
         retrieval_hits_count=result["retrieval_hits_count"],
         used_sources=[AnswerSource(**src) for src in result["used_sources"]],
+        timing=AnswerTiming(**result["timing"]) if result.get("timing") else None,
+        usage=AnswerUsage(**result["usage"]) if result.get("usage") else None,
     )

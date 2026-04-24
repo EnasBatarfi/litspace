@@ -32,6 +32,9 @@ LitSpace is a grounded multi-paper research workspace for academic PDFs.
 - Summary and comparison requests now prefer clarification or partial grounded answers instead of failing early with blanket insufficient-evidence responses.
 - Evidence requests remain stricter than summary and compare flows, but now report partial support when only some papers or claims are backed by retrieved evidence.
 - Added project-bounded discovery behavior for prompts like `which paper mentions X` and `search ... in all papers`, instead of treating them like open-domain chat or generic help openings.
+- Tightened ask routing so project-scoped identification questions like `which paper focuses on ...` are answered directly, while truly ambiguous prompts still clarify.
+- Added explicit project-bounded refusals for out-of-domain questions instead of routing them through vague insufficient-evidence replies.
+- The ask API now returns an `action` label (`answer`, `clarify`, or `refuse`) alongside the grounded answer payload.
 - Added lightweight continuation for assistant-offered follow-ups such as `yes`, `yes do it`, and `do it`, so quote-pull and similar multi-turn actions continue naturally.
 - Reduced repetitive low-value unsupported addenda so supported answers read more cleanly.
 - Simplified the papers rail UI:
@@ -82,7 +85,6 @@ Primary files/directories touched:
 - `data/raw/.gitkeep`
 - `data/processed/.gitkeep`
 - `data/indexes/.gitkeep`
-- `data/eval/.gitkeep`
 
 ### Phase 2. PDF Upload Flow
 
@@ -350,13 +352,14 @@ Example request:
 }
 ```
 
-Each response includes the project ID, project slug, original query, answer text, `insufficient_evidence`, retrieval hit count, and `used_sources`.
+Each response includes the project ID, project slug, original query, answer text, `action`, `insufficient_evidence`, retrieval hit count, `used_sources`, and optional timing / usage metadata.
 
 Current validation:
 
 - Supported Progent questions return grounded answers with inline citations.
 - Supported Sesame definition questions return grounded answers with inline citations.
 - Obviously unsupported questions return a cautious insufficient-evidence answer instead of a world-knowledge answer.
+- Clearly out-of-project questions return an explicit project-bounded refusal.
 - Insufficient-evidence answers return an empty `used_sources` list.
 
 Known limitations:
@@ -369,18 +372,53 @@ Known limitations:
 
 ### Phase 8. Evaluation Harness
 
-1. [ ] Build gold question set.
-2. [ ] Add retrieval metrics.
-3. [ ] Add answer quality metrics.
-4. [ ] Add error analysis labels.
-5. [ ] Compare no-RAG vs RAG baseline.
-6. [ ] Compare semantic vs hybrid retrieval.
-7. [ ] Compare no-reranker vs reranker.
+1. [x] Build a starter gold-question CSV template.
+2. [x] Add retrieval metrics aggregation and manual retrieval-label sheets.
+3. [x] Add answer quality judging with an LLM judge harness.
+4. [x] Add error analysis exports.
+5. [x] Add no-RAG vs RAG baseline evaluation harness.
 
 Primary files/directories touched:
 
-- Not implemented yet.
-- Expected touch points: `data/eval/`, evaluation scripts/services, and retrieval result artifacts.
+- `evaluation/scripts/`
+- `evaluation/datasets/questions.csv`
+- `evaluation/`
+
+What the evaluation harness is:
+
+- It is the benchmark pipeline for LitSpace, not part of the main product runtime.
+- It runs the benchmark questions against LitSpace and the baselines.
+- It stores the raw answers.
+- It asks a judge model to score those answers.
+- It aggregates the scores into summary metrics and pairwise comparisons.
+
+In short, the flow is:
+
+```text
+evaluation/datasets/questions.csv
+-> run systems
+-> write raw outputs
+-> judge answers
+-> summarize metrics
+```
+
+Main entrypoints:
+
+- `evaluation/scripts/run_systems.py`
+- `evaluation/scripts/judge_answers.py`
+- `evaluation/scripts/pairwise_judge.py`
+- `evaluation/scripts/summarize_results.py`
+
+Current evaluation artifacts:
+
+- `evaluation/datasets/questions.csv`
+  Benchmark questions, expected behavior, reference answers, and required points.
+- `evaluation/outputs/`
+  Raw answers from LitSpace and baselines, plus raw judge outputs.
+- `evaluation/results/`
+  Aggregated metrics, summaries, and error-analysis files.
+
+The starter question set lives under `evaluation/datasets/` and is meant to be completed with reference answers and required points before running the judge.
 
 ### Phase 9. Thin UI Polish
 
@@ -517,3 +555,45 @@ cd frontend
 npm install
 npm run dev
 ```
+
+### Evaluation Harness
+
+The evaluation harness uses the existing HTTP API as a black-box and writes artifacts under `evaluation/`.
+
+What it does:
+
+1. `run_systems.py` runs LitSpace and the baselines on every benchmark row.
+2. `judge_answers.py` scores each system answer with an LLM judge.
+3. `pairwise_judge.py` compares LitSpace head-to-head against each baseline.
+4. `summarize_results.py` turns those outputs into final metrics and result tables.
+
+The key folders are:
+
+- `evaluation/datasets/`: benchmark inputs
+- `evaluation/outputs/`: raw system and judge outputs
+- `evaluation/results/`: final summaries
+
+Set these environment variables before running it:
+
+```bash
+export LITSPACE_API_BASE=http://127.0.0.1:8000
+export LITSPACE_EVAL_PROJECT_ID=<project-id>
+export OPENAI_API_KEY=<your-openai-key>
+```
+
+Useful commands:
+
+```bash
+backend/.litenv/bin/python evaluation/scripts/setup_project.py
+backend/.litenv/bin/python evaluation/scripts/run_systems.py
+backend/.litenv/bin/python evaluation/scripts/judge_answers.py
+backend/.litenv/bin/python evaluation/scripts/pairwise_judge.py
+backend/.litenv/bin/python evaluation/scripts/summarize_results.py
+```
+
+Notes:
+
+- `setup_project.py` is optional if you already have an evaluation project created and indexed.
+- `run_systems.py` writes raw system answers into `evaluation/outputs/`.
+- `judge_answers.py` and `pairwise_judge.py` require `OPENAI_API_KEY`.
+- `summarize_results.py` writes final summaries into `evaluation/results/`.
