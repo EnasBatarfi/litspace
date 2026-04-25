@@ -9,6 +9,8 @@
     <a href="evaluation/notebooks/evaluation_analysis.ipynb"><strong>Evaluation Notebook</strong></a>
     &middot;
     <a href="evaluation/results/metrics_summary.csv"><strong>Results</strong></a>
+    &middot;
+    <a href="docs/Project_Report_DS593_BU.pdf"><strong>Final Report</strong></a>
   </p>
   <p>
     <a href="#quick-start"><strong>Quick Start</strong></a>
@@ -63,7 +65,7 @@
 
 ## About The Project
 
-LitSpace is a project-bounded RAG workspace for a small academic paper corpus. A user creates a project, uploads PDFs, parses and chunks them, builds project-specific indexes, and asks questions that stay grounded in the uploaded sources. The system is built for research-style workflows rather than general web chat.
+LitSpace is a project-bounded RAG workspace for academic paper corpora. A user creates a project, uploads PDFs, parses and chunks them, builds project-specific indexes, and asks questions that stay grounded in the uploaded sources. The system is built for research-style workflows rather than general web chat.
 
 The main use cases are:
 
@@ -385,7 +387,7 @@ litspace/
 ├── collected_papers/
 │   └── llm_privacy/
 ├── docs/
-│   └── final_report.pdf
+│   └── Project_Report_DS593_BU.pdf
 └── README.md
 ```
 
@@ -1105,8 +1107,7 @@ If there were more time, the next improvements would be:
 
 The final write-up is included here:
 
-```text
-docs/final_report.pdf
-```
+[Final report PDF](docs/Project_Report_DS593_BU.pdf)
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
