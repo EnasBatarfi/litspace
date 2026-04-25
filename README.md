@@ -21,6 +21,8 @@
     &middot;
     <a href="#main-results-summary"><strong>Main Results</strong></a>
     &middot;
+    <a href="#latency-token-and-cost-profile"><strong>Latency / Cost</strong></a>
+    &middot;
     <a href="#limitations-and-edge-cases"><strong>Limitations</strong></a>
   </p>
 </div>
@@ -49,6 +51,7 @@
     <li><a href="#evaluation-design-summary">Evaluation Design Summary</a></li>
     <li><a href="#what-the-metrics-mean">What the Metrics Mean</a></li>
     <li><a href="#main-results-summary">Main Results Summary</a></li>
+    <li><a href="#latency-token-and-cost-profile">Latency, Token, and Cost Profile</a></li>
     <li><a href="#example-prompts--example-usage">Example Prompts / Example Usage</a></li>
     <li><a href="#screenshots">Screenshots</a></li>
     <li><a href="#limitations-and-edge-cases">Limitations and Edge Cases</a></li>
@@ -93,7 +96,7 @@ Many paper assistants stop at one-document summarization or vague chat over uplo
 
 LitSpace was built around that problem. The core question behind the project is:
 
-> Given a small, curated project corpus, can a local RAG workspace answer questions more accurately than prompt-only baselines while staying grounded in the uploaded sources?
+> Given a small, curated project corpus, can a project-bounded RAG workspace answer questions more accurately than prompt-only baselines while staying grounded in the uploaded sources?
 
 That makes the project both a product problem and an evaluation problem. It is not enough for the app to return fluent text. It has to retrieve the right paper, recover useful evidence, answer clearly, and avoid answering outside the project scope.
 
@@ -115,7 +118,7 @@ That makes the project both a product problem and an evaluation problem. It is n
 
 ## System Architecture Overview
 
-LitSpace follows a local, project-bounded RAG pipeline:
+LitSpace follows a project-bounded RAG pipeline:
 
 1. The user creates a project in the frontend.
 2. PDFs are uploaded to the backend and stored under `data/raw/`.
@@ -267,7 +270,7 @@ The backend is designed around a provider chain rather than one hardcoded model.
 
 ```bash
 LLM_PROVIDER_CHAIN=openai,ollama
-````
+```
 
 The local fallback example uses:
 
@@ -364,6 +367,7 @@ litspace/
 │   └── .env.local
 ├── demo/
 │   ├── corpus/
+│   ├── screenshots/
 │   └── quick_demo.py
 ├── evaluation/
 │   ├── corpus/
@@ -381,8 +385,7 @@ litspace/
 ├── collected_papers/
 │   └── llm_privacy/
 ├── docs/
-│   ├── final_report.pdf
-│   └── screenshots/
+│   └── final_report.pdf
 └── README.md
 ```
 
@@ -437,8 +440,7 @@ uvicorn app.main:app --reload
 In a new terminal:
 
 ```bash
-cd frontend
-npm run dev
+npm --prefix frontend run dev
 ```
 
 ### 7. Open the app
@@ -604,8 +606,7 @@ The backend runs on `http://127.0.0.1:8000`.
 From the repository root:
 
 ```bash
-cd frontend
-npm run dev
+npm --prefix frontend run dev
 ```
 
 Open:
@@ -726,6 +727,20 @@ The project evaluates both retrieval and generation:
   - helpfulness
   - faithfulness
   - follow-up success
+- efficiency and instrumentation metrics:
+  - average latency
+  - latency confidence interval
+  - average input tokens
+  - average output tokens
+  - average estimated API cost
+- routing and scope-control metrics:
+  - answered rate
+  - clarified rate
+  - refused rate
+  - over-clarification rate
+  - over-refusal rate
+  - clarification accuracy
+  - refusal accuracy
 - pairwise win rates
 - row-level failure labels in `evaluation/results/error_analysis.csv`
 
@@ -762,6 +777,24 @@ Why this matters:
 
 This compares two systems directly on the same question and asks the judge which answer is better. It helps because averages alone do not show which system is preferred example by example.
 
+### Latency, token, and cost metrics
+
+- **average latency**: average wall-clock response time per benchmark question
+- **latency CI95**: approximate 95% confidence interval around the average latency
+- **average input tokens**: average prompt/context tokens sent to the model for each answer
+- **average output tokens**: average generated answer tokens returned by the model
+- **average cost**: estimated API cost per answer from recorded token usage and the configured model pricing constants in `evaluation/scripts/run_systems.py`
+
+The evaluation records latency, token usage, provider/model metadata, and estimated API cost for the current LitSpace and baseline runs. LitSpace uses more input tokens because it includes retrieved evidence in the prompt; the baselines use shorter direct prompts or prewritten summary cards.
+
+### Routing and scope-control metrics
+
+- **answered rate**: share of benchmark examples where the system gave an answer
+- **clarified rate**: share where the system asked the user to clarify
+- **refused rate**: share where the system refused because the request was outside scope or unsupported
+- **over-clarification rate**: share of answerable examples where the system clarified unnecessarily
+- **over-refusal rate**: share of answerable examples where the system refused unnecessarily
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Main Results Summary
@@ -770,16 +803,16 @@ This compares two systems directly on the same question and asks the judge which
 
 | System | Correctness | Completeness | Relevance | Helpfulness | Faithfulness | Avg latency (s) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| LitSpace RAG | 1.44 | 1.22 | 1.73 | 1.40 | 1.49 | 2.86 |
-| Summary few-shot | 1.33 | 1.09 | 1.80 | 1.29 | 1.71 | 1.92 |
-| Zero-shot | 0.33 | 0.22 | 1.22 | 0.31 | N/A | 2.05 |
+| LitSpace RAG | 1.42 | 1.27 | 1.71 | 1.42 | 1.44 | 2.23 |
+| Summary few-shot | 1.33 | 1.02 | 1.82 | 1.27 | 1.82 | 2.08 |
+| Zero-shot | 0.33 | 0.22 | 1.22 | 0.31 | N/A | 2.04 |
 
-This table shows LitSpace clearly beating zero-shot. That gap is large enough that retrieval, scope control, and evidence grounding are doing real work. The stronger baseline is `summary_few_shot`, and that comparison is closer. LitSpace is better on correctness, completeness, and helpfulness, while summary few-shot stays a little stronger on relevance and faithfulness.
+This table shows LitSpace clearly beating zero-shot. That gap is large enough that retrieval, scope control, and evidence grounding are doing real work. The stronger baseline is `summary_few_shot`, and that comparison is closer. LitSpace is better on correctness, completeness, and helpfulness, while summary few-shot is stronger on relevance and faithfulness.
 
 Why that pattern makes sense:
 
 - the summary baseline is given compressed paper summaries, so it can sound clean and on-topic
-- LitSpace has to retrieve evidence at query time, which makes it stronger on actual grounded answering but also exposes it to retrieval and routing errors
+- LitSpace has to retrieve evidence at query time, which makes it stronger on grounded answering but also exposes it to retrieval and routing errors
 - this is exactly the kind of tradeoff the project was meant to study
 
 ### Retrieval table
@@ -798,24 +831,24 @@ Paper retrieval is strong. LitSpace usually finds the right paper and often rank
 
 | Comparison | LitSpace win rate | Baseline win rate | Tie rate |
 | --- | ---: | ---: | ---: |
-| LitSpace vs zero-shot | 0.756 | 0.133 | 0.111 |
-| LitSpace vs summary few-shot | 0.489 | 0.333 | 0.178 |
+| LitSpace vs zero-shot | 0.756 | 0.111 | 0.133 |
+| LitSpace vs summary few-shot | 0.489 | 0.267 | 0.244 |
 
-These pairwise results say the same basic thing in a more example-by-example way. LitSpace is clearly preferred over zero-shot. Against summary few-shot, it still comes out ahead, but the margin is smaller and the tie rate is meaningful. That tells us the stronger baseline is not weak. It is a real competitor. LitSpace still wins because grounding and retrieval help enough often enough to outweigh the simplicity advantage of prompt-only baselines.
+These pairwise results say the same basic thing in a more example-by-example way. LitSpace is clearly preferred over zero-shot. Against summary few-shot, it still comes out ahead, but the margin is smaller and the tie rate is meaningful. That tells us the stronger baseline is a real competitor.
 
 ### Category highlights
 
 | Category | LitSpace correctness |
 | --- | ---: |
 | Follow-up | 2.00 |
-| Evidence lookup | 1.71 |
+| Evidence lookup | 1.57 |
 | Single-paper summary | 1.71 |
 | Single-paper factual | 1.57 |
 | Refusal | 1.50 |
 | Multi-paper synthesis | 0.88 |
 | Ambiguity | 0.60 |
 
-The best categories are follow-up, evidence lookup, and the single-paper tasks. The weakest categories are ambiguity and multi-paper synthesis. Those weaker categories ask more from the system than simple retrieval. They require better scope resolution, better section coverage, and better answer composition across multiple sources.
+The best categories are follow-up, single-paper summary, evidence lookup, and single-paper factual tasks. The weakest categories are ambiguity and multi-paper synthesis. Those weaker categories ask more from the system than simple retrieval: better scope resolution, better section coverage, and better answer composition across multiple sources.
 
 ### Error analysis
 
@@ -825,13 +858,43 @@ Top failure types from `evaluation/results/error_analysis.csv`:
 | --- | ---: |
 | Unsupported claim | 14 |
 | Missing key point | 11 |
-| Over clarification | 4 |
+| Over-clarification | 4 |
+| Wrong paper | 3 |
 | Should have clarified | 3 |
-| Wrong paper | 2 |
-| Over refusal | 1 |
+| Over-refusal | 1 |
 | Should have refused | 1 |
 
 The error analysis matches the retrieval results. A lot of the mistakes are not total failures. The system is often in the right area, but the final answer is either missing a key point or not grounded tightly enough. That is why the limitations section below focuses heavily on section retrieval, answer composition, and routing edge cases instead of pretending the whole system fails equally everywhere.
+
+### Routing table
+
+| Metric | LitSpace RAG | Summary few-shot | Zero-shot |
+| --- | ---: | ---: | ---: |
+| Answered rate | 0.711 | 0.778 | 0.756 |
+| Clarified rate | 0.156 | 0.133 | 0.244 |
+| Refused rate | 0.133 | 0.089 | 0.000 |
+| Over-clarification rate | 0.125 | 0.050 | 0.175 |
+| Over-refusal rate | 0.073 | 0.000 | 0.000 |
+| Clarification accuracy | 0.400 | 0.800 | 0.800 |
+| Refusal accuracy | 0.750 | 1.000 | 0.000 |
+
+These values show that LitSpace uses the project boundary more explicitly than the baselines. That is useful for refusing out-of-scope requests, but it also creates routing risk: the system can over-clarify or over-refuse when a grounded answer was possible.
+
+### Latency, Token, and Cost Profile
+
+| System | Avg latency (s) | Latency CI95 | Avg input tokens | Avg output tokens | Avg cost / answer |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| LitSpace RAG | 2.23 | 0.57 | 5242.22 | 256.09 | $0.00508 |
+| Summary few-shot | 2.08 | 0.29 | 629.67 | 72.80 | $0.00080 |
+| Zero-shot | 2.04 | 0.25 | 150.58 | 92.29 | $0.00053 |
+
+![Latency, token, and cost profile](evaluation/results/plots/latency_token_cost_profile.svg)
+
+This plot and table are generated from `evaluation/notebooks/evaluation_analysis.ipynb`. LitSpace now has token and cost values in the current evaluation results. It uses many more input tokens than the prompt-only baselines because the RAG path sends retrieved source evidence and grounding instructions into the model. That is a deliberate quality tradeoff: the system spends more context to answer from the uploaded papers instead of relying on prompt-only memory.
+
+The cost values are per-answer averages for this benchmark and model configuration. They are useful for comparing these three runs, but they should not be treated as universal production costs because corpus size, top-k retrieval, answer length, model choice, and follow-up length can all change the numbers.
+
+Token and cost averages are computed only for rows where provider usage was reported. For LitSpace, no-generation clarify/refuse responses do not have token usage.
 
 ### Evaluation visuals
 
@@ -894,13 +957,13 @@ The UI also includes quick actions for:
 
 ### Workspace overview
 
-![LitSpace workspace overview](docs/screenshots/workspace_live.png)
+![LitSpace workspace overview](demo/screenshots/workspace_overview.png)
 
 This screenshot shows the main workspace layout with the project sidebar, paper list, chat thread, prompt bar, and a grounded answer with inline source tags.
 
 ### Live workspace state
 
-![LitSpace full workspace](docs/screenshots/workspace_full_page.png)
+![LitSpace live answer with sources](demo/screenshots/evidence_panel.png)
 
 This view shows the system in an active multi-paper workflow with a populated evaluation project, multiple indexed papers, and a grounded answer inside the main chat area.
 

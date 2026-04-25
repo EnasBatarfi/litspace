@@ -498,7 +498,7 @@ def compute_section_recall_at_5(retrieve_hits: list[dict], expected_groups: list
     return matched / len(expected_groups)
 
 
-def estimate_baseline_cost(input_tokens: int | None, output_tokens: int | None) -> float | None:
+def estimate_openai_cost(input_tokens: int | None, output_tokens: int | None) -> float | None:
     if input_tokens is None or output_tokens is None:
         return None
     input_cost = (input_tokens / 1_000_000) * OPENAI_INPUT_COST_PER_1M
@@ -571,7 +571,7 @@ def run_prompt_baseline(
         "input_tokens": total_input_tokens or None,
         "output_tokens": total_output_tokens or None,
         "total_tokens": total_tokens,
-        "cost_usd": estimate_baseline_cost(total_input_tokens or None, total_output_tokens or None),
+        "cost_usd": estimate_openai_cost(total_input_tokens or None, total_output_tokens or None),
     }
 
 
@@ -600,12 +600,27 @@ def main() -> None:
         turn_records: list[dict] = []
         last_answer: dict | None = None
         answer_latency_total = 0.0
+        litspace_input_tokens = 0
+        litspace_output_tokens = 0
+        litspace_provider: str | None = None
+        litspace_model: str | None = None
 
         for turn in row["turns_json"]:
             call_start = time.perf_counter()
             last_answer = ask_litspace(turn, chat_id, selected_ids, paper_order_ids)
             call_latency = time.perf_counter() - call_start
             answer_latency_total += call_latency
+            turn_usage = (last_answer or {}).get("usage") or {}
+            turn_input_tokens = turn_usage.get("input_tokens")
+            turn_output_tokens = turn_usage.get("output_tokens")
+            if turn_input_tokens is not None:
+                litspace_input_tokens += turn_input_tokens
+            if turn_output_tokens is not None:
+                litspace_output_tokens += turn_output_tokens
+            if turn_usage.get("llm_provider"):
+                litspace_provider = turn_usage["llm_provider"]
+            if turn_usage.get("llm_model"):
+                litspace_model = turn_usage["llm_model"]
 
             turn_records.append(
                 {
@@ -613,6 +628,11 @@ def main() -> None:
                     "assistant_answer": last_answer.get("answer", ""),
                     "latency_sec": round(call_latency, 6),
                     "insufficient_evidence": last_answer.get("insufficient_evidence"),
+                    "input_tokens": turn_input_tokens,
+                    "output_tokens": turn_output_tokens,
+                    "total_tokens": turn_usage.get("total_tokens"),
+                    "provider": turn_usage.get("llm_provider"),
+                    "model": turn_usage.get("llm_model"),
                 }
             )
 
@@ -627,6 +647,15 @@ def main() -> None:
         answer_behavior = resolve_behavior_label(answer_text, answer_action)
         backend_usage = (last_answer or {}).get("usage") or {}
         backend_timing = (last_answer or {}).get("timing") or {}
+        total_litspace_tokens = None
+        if litspace_input_tokens or litspace_output_tokens:
+            total_litspace_tokens = litspace_input_tokens + litspace_output_tokens
+        litspace_cost = None
+        if litspace_provider == "openai":
+            litspace_cost = estimate_openai_cost(
+                litspace_input_tokens or None,
+                litspace_output_tokens or None,
+            )
 
         litspace_outputs.append(
             {
@@ -652,12 +681,12 @@ def main() -> None:
                 "backend_total_latency_sec": backend_timing.get("total_latency_sec"),
                 "backend_retrieval_latency_sec": backend_timing.get("retrieval_latency_sec"),
                 "backend_generation_latency_sec": backend_timing.get("generation_latency_sec"),
-                "input_tokens": backend_usage.get("input_tokens"),
-                "output_tokens": backend_usage.get("output_tokens"),
-                "total_tokens": backend_usage.get("total_tokens"),
-                "provider": backend_usage.get("llm_provider"),
-                "model": backend_usage.get("llm_model"),
-                "cost_usd": None,
+                "input_tokens": litspace_input_tokens or backend_usage.get("input_tokens"),
+                "output_tokens": litspace_output_tokens or backend_usage.get("output_tokens"),
+                "total_tokens": total_litspace_tokens or backend_usage.get("total_tokens"),
+                "provider": litspace_provider or backend_usage.get("llm_provider"),
+                "model": litspace_model or backend_usage.get("llm_model"),
+                "cost_usd": litspace_cost,
             }
         )
 
