@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -11,7 +12,7 @@ from pathlib import Path
 from app.models.message import Message
 from app.models.paper import Paper
 from app.services.generation.prompting import build_system_prompt, build_user_prompt
-from app.services.llm.client import generate_answer_text
+from app.services.llm.client import LLMGenerationResult, generate_answer
 from app.services.retrieval.pipeline import hybrid_retrieve
 
 
@@ -1645,6 +1646,33 @@ def ask_project(
     selected_paper_ids: Sequence[int] = (),
     paper_order_ids: Sequence[int] = (),
 ) -> dict:
+    total_start = time.perf_counter()
+
+    def finish(
+        payload: dict,
+        *,
+        retrieval_latency_sec: float | None = None,
+        generation_latency_sec: float | None = None,
+        generation: LLMGenerationResult | None = None,
+    ) -> dict:
+        payload["timing"] = {
+            "retrieval_latency_sec": retrieval_latency_sec,
+            "generation_latency_sec": generation_latency_sec,
+            "total_latency_sec": round(time.perf_counter() - total_start, 6),
+        }
+        payload["usage"] = (
+            {
+                "llm_provider": generation.provider,
+                "llm_model": generation.model,
+                "input_tokens": generation.input_tokens,
+                "output_tokens": generation.output_tokens,
+                "total_tokens": generation.total_tokens,
+            }
+            if generation is not None
+            else None
+        )
+        return payload
+
     scope = _resolve_scope(
         query=query,
         project_papers=project_papers,
@@ -1654,7 +1682,7 @@ def ask_project(
     )
 
     if scope.assistant_response:
-        return {
+        return finish({
             "project_id": project_id,
             "project_slug": project_slug,
             "query": query,
@@ -1663,10 +1691,10 @@ def ask_project(
             "insufficient_evidence": False,
             "retrieval_hits_count": 0,
             "used_sources": [],
-        }
+        })
 
     if scope.clarification_text:
-        return {
+        return finish({
             "project_id": project_id,
             "project_slug": project_slug,
             "query": query,
@@ -1675,13 +1703,14 @@ def ask_project(
             "insufficient_evidence": False,
             "retrieval_hits_count": 0,
             "used_sources": [],
-        }
+        })
 
     answer_plan = build_answer_plan(
         query=scope.resolved_query,
         scope_paper_ids=scope.paper_ids,
     )
 
+    retrieval_start = time.perf_counter()
     hits = _retrieve_hits(
         project_slug=project_slug,
         retrieval_query=scope.retrieval_query,
@@ -1689,9 +1718,10 @@ def ask_project(
         scope_paper_ids=scope.paper_ids,
         request_type=answer_plan.request_type,
     )
+    retrieval_latency_sec = round(time.perf_counter() - retrieval_start, 6)
 
     if not hits:
-        return {
+        return finish({
             "project_id": project_id,
             "project_slug": project_slug,
             "query": query,
@@ -1700,10 +1730,10 @@ def ask_project(
             "insufficient_evidence": True,
             "retrieval_hits_count": 0,
             "used_sources": [],
-        }
+        }, retrieval_latency_sec=retrieval_latency_sec)
 
     if not _has_sufficient_evidence(scope.resolved_query, hits, scope.paper_ids, answer_plan.request_type):
-        return {
+        return finish({
             "project_id": project_id,
             "project_slug": project_slug,
             "query": query,
@@ -1712,7 +1742,7 @@ def ask_project(
             "insufficient_evidence": True,
             "retrieval_hits_count": len(hits),
             "used_sources": [],
-        }
+        }, retrieval_latency_sec=retrieval_latency_sec)
 
     system_prompt = build_system_prompt()
     user_prompt = build_user_prompt(
@@ -1728,7 +1758,8 @@ def ask_project(
         },
     )
 
-    answer = generate_answer_text(
+    generation_start = time.perf_counter()
+    generation = generate_answer(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         temperature=temperature,
@@ -1738,6 +1769,8 @@ def ask_project(
             scope.paper_ids,
         ),
     )
+    generation_latency_sec = round(time.perf_counter() - generation_start, 6)
+    answer = generation.text
 
     answer = _normalize_citation_groups(answer)
     answer = _strip_trailing_low_value_unsupported_addendum(
@@ -1745,7 +1778,7 @@ def ask_project(
         request_type=answer_plan.request_type,
     )
     if _is_full_insufficient_answer(answer):
-        return {
+        return finish({
             "project_id": project_id,
             "project_slug": project_slug,
             "query": query,
@@ -1754,7 +1787,7 @@ def ask_project(
             "insufficient_evidence": True,
             "retrieval_hits_count": len(hits),
             "used_sources": [],
-        }
+        }, retrieval_latency_sec=retrieval_latency_sec, generation_latency_sec=generation_latency_sec, generation=generation)
 
     cited_source_numbers = _extract_cited_source_numbers(answer, len(hits))
 
@@ -1779,7 +1812,7 @@ def ask_project(
             }
         )
 
-    return {
+    return finish({
         "project_id": project_id,
         "project_slug": project_slug,
         "query": query,
@@ -1788,4 +1821,4 @@ def ask_project(
         "insufficient_evidence": False,
         "retrieval_hits_count": len(hits),
         "used_sources": used_sources,
-    }
+    }, retrieval_latency_sec=retrieval_latency_sec, generation_latency_sec=generation_latency_sec, generation=generation)
